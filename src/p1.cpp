@@ -176,6 +176,22 @@ solution solve(const GRBEnv& env, const problem_data& data) {
         }
     }
 
+    // O vértice na primeira partição tem ID menor que todos os outros vértices
+    // no ciclo. Elimina simetrias de rotação do ciclo.
+    for (Graph::EdgeIt e(data.graph); e != lemon::INVALID; ++e) {
+        Graph::Node u = data.graph.u(e), v = data.graph.v(e);
+        if (data.graph.id(u) > data.graph.id(v)) {
+            std::swap(u, v);
+        }
+        GRBLinExpr is_circuit_node_expr;
+        for (int j = 0; j < N; j++) {
+            is_circuit_node_expr += circuit_node[u][j];
+        }
+        model.addConstr(circuit_node[u][0] >=
+                            circuit_node[v][0] - (1 - is_circuit_node_expr),
+                        constr_name);
+    }
+
     // Restrições de arestas de estrela. Uma aresta deve estar em uma estrela
     // se ambos seus extremos estão na mesma partição e um deles está no
     // circuito.
@@ -281,8 +297,10 @@ solution solve(const GRBEnv& env, const problem_data& data) {
     for (Graph::ArcIt a(data.graph); a != lemon::INVALID; ++a) {
         if (circuit_edge[a].get(GRB_DoubleAttr_X) >= 0.5) {
             Graph::Node s = data.graph.source(a), t = data.graph.target(a);
-            std::cout << data.graph.id(s) << " -> " << data.graph.id(t) << ";"
-                      << std::endl;
+            std::cout << data.graph.id(s) << " -> " << data.graph.id(t)
+                      << "[penwidth="
+                      << data.edge_cost[data.graph.edge(s, t)] / 2.0
+                      << "];" << std::endl;
             solution.push_back(data.graph.edge(s, t));
         }
     }
@@ -295,7 +313,8 @@ solution solve(const GRBEnv& env, const problem_data& data) {
             if (star_edge[e][j].get(GRB_DoubleAttr_X) >= 0.5) {
                 Graph::Node u = data.graph.u(e), v = data.graph.v(e);
                 std::cout << data.graph.id(u) << " -> " << data.graph.id(v)
-                          << "[dir=none];" << std::endl;
+                          << "[dir=none, penwidth=" << data.edge_cost[e] / 2.0
+                          << "];" << std::endl;
                 solution.push_back(e);
             }
         }
@@ -314,7 +333,7 @@ int main(int argc, char* argv[]) {
     GRBEnv env;
     env.set(GRB_IntParam_Seed, seed);
 
-    lemon::FullGraph g(16);
+    lemon::FullGraph g(20);
 
     problem_data instance(g);
     instance.capacity = 15;
