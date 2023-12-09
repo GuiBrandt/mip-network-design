@@ -4,6 +4,7 @@
 #include <fstream>
 #include <numeric>
 #include <random>
+#include <set>
 #include <unordered_map>
 #include <vector>
 
@@ -420,21 +421,19 @@ class problem_constraints_generator {
 };
 
 struct solution_t {
-  private:
-    std::vector<Graph::Node> partition_repr;
-
-  public:
     const problem_data& instance;
-    const problem_vars& vars;
 
     /// Partição dos nós do grafo.
     Graph::NodeMap<int> partition;
+
+    /// Vetor de representantes das partições (na ordem numérica das partições)
+    std::vector<Graph::Node> partition_repr;
 
     /// Nós do circuito, em ordem.
     std::vector<Graph::Node> circuit_nodes;
 
     solution_t(const problem_data& data, const problem_vars& vars)
-        : instance(data), vars(vars), partition(data.graph) {
+        : instance(data), partition(data.graph) {
         const auto& G = data.graph;
 
         // Partições
@@ -480,17 +479,19 @@ struct solution_t {
         }
     }
 
+    solution_t(const problem_data& data)
+        : instance(data), partition(instance.graph) {}
+
     solution_t(const solution_t& other)
-        : instance(other.instance), vars(other.vars),
-          partition_repr(other.partition_repr), partition(instance.graph),
-          circuit_nodes(other.circuit_nodes) {
+        : instance(other.instance), partition_repr(other.partition_repr),
+          partition(instance.graph), circuit_nodes(other.circuit_nodes) {
         for (Graph::NodeIt i(instance.graph); i != lemon::INVALID; ++i) {
             partition[i] = other.partition[i];
         }
     }
 
     solution_t(const solution_t&& other)
-        : instance(other.instance), vars(other.vars),
+        : instance(other.instance),
           partition_repr(std::move(other.partition_repr)),
           partition(instance.graph),
           circuit_nodes(std::move(other.circuit_nodes)) {
@@ -523,19 +524,111 @@ struct solution_t {
         }
         return result;
     }
+
+    /// Computa o custo da solução
+    uint64_t cost() const {
+        uint64_t value = 0;
+        for (const auto& e : circuit_edges()) {
+            value += instance.circuit_cost_factor * instance.edge_cost[e];
+        }
+        for (const auto& e : star_edges()) {
+            value += instance.edge_cost[e];
+        }
+        return value;
+    }
 };
+
+solution_t greedy_approximation(const problem_data& data) {
+    const auto& G = data.graph;
+
+    std::set<Graph::Node> pool;
+    for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
+        pool.insert(v);
+    }
+
+    solution_t solution(data);
+
+    int part = -1;
+    std::set<Graph::Node> centers;
+
+    while (!pool.empty()) {
+        uint64_t best_cost = std::numeric_limits<uint64_t>::max();
+        std::vector<Graph::Node> best_star;
+        Graph::Node best_center;
+
+        for (auto u : pool) {
+            uint64_t cost = 0;
+            std::vector<Graph::Node> star = {u};
+
+            std::vector<Graph::Node> neighbors;
+            for (auto v : pool) {
+                if (u != v) {
+                    neighbors.push_back(v);
+                }
+            }
+            std::sort(neighbors.begin(), neighbors.end(),
+                      [&](const Graph::Node& x, const Graph::Node& y) {
+                          return data.edge_cost[G.edge(u, x)] <
+                                 data.edge_cost[G.edge(u, y)];
+                      });
+
+            uint64_t used = data.node_weight[u];
+            uint64_t edge_cost = 0;
+            for (auto v : neighbors) {
+                edge_cost = data.edge_cost[G.edge(u, v)];
+                used += data.node_weight[v];
+                if (used > data.capacity) {
+                    break;
+                }
+                cost += edge_cost;
+                star.push_back(v);
+            }
+
+            if (!neighbors.empty()) {
+                auto v = neighbors[neighbors.size() - 1];
+                auto worst_case = G.edge(u, v);
+                cost += data.circuit_cost_factor * data.edge_cost[worst_case];
+            }
+
+            if (cost < best_cost) {
+                best_cost = cost;
+                best_star = std::move(star);
+                best_center = u;
+            }
+        }
+
+        solution.partition[best_center] = ++part;
+        solution.partition_repr.push_back(best_center);
+        centers.insert(best_center);
+        for (auto v : best_star) {
+            pool.erase(v);
+            solution.partition[v] = part;
+        }
+    }
+
+    Graph::Node v = *centers.begin();
+    centers.erase(v);
+    solution.circuit_nodes.push_back(v);
+
+    while (!centers.empty()) {
+        Graph::Node next =
+            *std::min_element(centers.begin(), centers.end(),
+                              [&](const Graph::Node& x, const Graph::Node& y) {
+                                  return data.edge_cost[G.edge(v, x)] <
+                                         data.edge_cost[G.edge(v, y)];
+                              });
+        centers.erase(next);
+        solution.circuit_nodes.push_back(next);
+        v = next;
+    }
+
+    return solution;
+}
 
 solution_t solve(const GRBEnv& env, const problem_data& data) {
     GRBModel model(env);
     model.set(GRB_StringAttr_ModelName, "Um Problema de Network Design");
     model.set(GRB_IntAttr_ModelSense, GRB_MINIMIZE);
-
-    for (Graph::EdgeIt e(data.graph); e != lemon::INVALID; ++e) {
-        std::cout << data.edge_cost[e] << std::endl;
-    }
-    for (Graph::NodeIt v(data.graph); v != lemon::INVALID; ++v) {
-        std::cout << data.node_weight[v] << std::endl;
-    }
 
     problem_vars vars(model, data);
     problem_constraints_generator(model, vars, data)
@@ -572,7 +665,7 @@ void view(const solution_t& solution) {
     out << "}" << std::endl;
     out.close();
 
-    system("circo -q -Tpdf solution.dot -o solution.pdf");
+    system("neato -q -Tpdf solution.dot -o solution.pdf");
     system("okular solution.pdf");
 }
 
@@ -581,7 +674,7 @@ problem_data random_instance(const Graph& G, int seed) {
 
     problem_data instance(G);
 
-    std::uniform_int_distribution<uint64_t> capacity_dist(20, 40);
+    std::uniform_int_distribution<uint64_t> capacity_dist(20, 50);
     instance.capacity = capacity_dist(rng);
 
     std::uniform_int_distribution<uint64_t> factor_dist(2, 5);
@@ -613,8 +706,16 @@ int main(int argc, char* argv[]) {
 
     Graph G(16);
     auto instance = random_instance(G, seed);
-    auto solution = solve(env, instance);
 
+    auto greedy_solution = greedy_approximation(instance);
+    view(greedy_solution);
+
+    auto cutoff = greedy_solution.cost();
+    std::cout << "Heuristic cost: " << cutoff << std::endl;
+
+    env.set(GRB_DoubleParam_Cutoff, cutoff);
+
+    auto solution = solve(env, instance);
     view(solution);
 
     return 0;
