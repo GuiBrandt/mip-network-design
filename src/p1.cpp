@@ -69,7 +69,14 @@ struct problem_vars {
      * `circuit_node[i][j]` = 1 se o nó `i` está no circuito e na partição `j`,
      *                        0 caso contrário.
      */
-    NodePartitionVars circuit_node;
+    NodePartitionVars circuit_partition_node;
+
+    /**
+     * Variáveis de incidência dos nós do circuito.
+     *
+     * `circuit_node[i]` = 1 se o nó `i` está no circuito, 0 caso contrário.
+     */
+    Graph::NodeMap<GRBVar> circuit_node;
 
     /**
      * Ordem de um nó no circuito.
@@ -92,15 +99,16 @@ struct problem_vars {
     /**
      * Variáveis de incidência das arestas das estrelas.
      *
-     * `star_edge[e][j]` = 1 se a aresta `e` está na estrela `j`, 0 caso
-     *                     contrário.
+     * `star_edge[e]` = 1 se a aresta `e` está em alguma estrela, 0 caso
+     *                  contrário.
      */
-    EdgePartitionVars star_edge;
+    Graph::EdgeMap<GRBVar> star_edge;
 
     problem_vars(GRBModel& model, const problem_data& data)
         : partition(data.graph), partition_used(data.graph.nodeNum()),
-          circuit_node(data.graph), circuit_order(data.graph),
-          circuit_arc(data.graph), star_edge(data.graph) {
+          circuit_partition_node(data.graph), circuit_node(data.graph),
+          circuit_order(data.graph), circuit_arc(data.graph),
+          star_edge(data.graph) {
         static char var_name[32];
 
         const auto& G = data.graph;
@@ -114,6 +122,7 @@ struct problem_vars {
                               G.id(i), j);
                 partition[i][j] =
                     model.addVar(0.0, 1.0, 0.0, GRB_BINARY, var_name);
+                partition[i][j].set(GRB_IntAttr_PoolIgnore, 1);
             }
         }
 
@@ -122,17 +131,27 @@ struct problem_vars {
             std::snprintf(var_name, sizeof(var_name), "partition_used[%d]", j);
             partition_used[j] =
                 model.addVar(0.0, 1.0, 0.0, GRB_BINARY, var_name);
+            partition_used[j].set(GRB_IntAttr_BranchPriority, 1000);
+            partition_used[j].set(GRB_IntAttr_PoolIgnore, 1);
+            partition_used[j].set(GRB_DoubleAttr_VarHintVal, 0);
         }
 
         // Nós no circuito
         for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
-            circuit_node[i].resize(N_PARTITIONS);
+            circuit_partition_node[i].resize(N_PARTITIONS);
             for (int j = 0; j < N_PARTITIONS; j++) {
-                std::snprintf(var_name, sizeof(var_name), "circuit_node[%d,%d]",
-                              G.id(i), j);
-                circuit_node[i][j] =
+                std::snprintf(var_name, sizeof(var_name),
+                              "circuit_partition_node[%d,%d]", G.id(i), j);
+                circuit_partition_node[i][j] =
                     model.addVar(0.0, 1.0, 0.0, GRB_BINARY, var_name);
             }
+
+            std::snprintf(var_name, sizeof(var_name), "circuit_node[%d]",
+                          G.id(i));
+            circuit_node[i] = model.addVar(0.0, 1.0, 0.0, GRB_BINARY, var_name);
+            circuit_node[i].set(GRB_IntAttr_BranchPriority, 500);
+            circuit_node[i].set(GRB_IntAttr_PoolIgnore, 1);
+            circuit_node[i].set(GRB_DoubleAttr_VarHintVal, 0);
         }
 
         // Ordem dos nós no circuito
@@ -141,28 +160,27 @@ struct problem_vars {
                           G.id(i));
             circuit_order[i] =
                 model.addVar(0.0, N_PARTITIONS - 1, 0.0, GRB_INTEGER, var_name);
+            circuit_order[i].set(GRB_IntAttr_BranchPriority, -1000);
+            circuit_order[i].set(GRB_IntAttr_PoolIgnore, 1);
         }
 
         // Arcos no circuito
-        for (Graph::ArcIt e(G); e != lemon::INVALID; ++e) {
-            Graph::Node u = G.source(e), v = G.target(e);
+        for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
+            Graph::Node u = G.source(a), v = G.target(a);
             std::snprintf(var_name, sizeof(var_name), "circuit_arc[%d,%d]",
                           G.id(u), G.id(v));
             uint64_t cost =
                 data.circuit_cost_factor * data.edge_cost[G.edge(u, v)];
-            circuit_arc[e] = model.addVar(0.0, 1.0, cost, GRB_BINARY, var_name);
+            circuit_arc[a] = model.addVar(0.0, 1.0, cost, GRB_BINARY, var_name);
         }
 
         // Arestas nas estrelas
         for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
-            star_edge[e].resize(N_PARTITIONS);
-            for (int j = 0; j < N_PARTITIONS; j++) {
-                std::snprintf(var_name, sizeof(var_name), "star_edge[%d,%d,%d]",
-                              G.id(G.u(e)), G.id(G.v(e)), j);
-                uint64_t cost = data.edge_cost[e];
-                star_edge[e][j] =
-                    model.addVar(0.0, 1.0, cost, GRB_BINARY, var_name);
-            }
+            std::snprintf(var_name, sizeof(var_name), "star_edge[%d,%d]",
+                          G.id(G.u(e)), G.id(G.v(e)));
+            uint64_t cost = data.edge_cost[e];
+            star_edge[e] = model.addVar(0.0, 1.0, cost, GRB_BINARY, var_name);
+            star_edge[e].set(GRB_IntAttr_BranchPriority, -1000);
         }
     }
 };
@@ -221,6 +239,9 @@ class problem_constraints_generator {
                                 vars.partition_used[j - 1],
                             constr_name);
         }
+
+        model.addConstr(vars.partition[G.nodeFromId(0)][0] >= 1);
+
         return *this;
     }
 
@@ -253,35 +274,6 @@ class problem_constraints_generator {
     }
 
     /**
-     * Adiciona restrições para vértices serem escolhidos no circuito.
-     */
-    problem_constraints_generator& add_circuit_node_constraints() {
-        for (int j = 0; j < N_PARTITIONS; j++) {
-            // Exatamente um vértice da partição está no circuito se ela for
-            // usada, ou nenhum, caso contrário.
-            GRBLinExpr nodes_in_partition_expr;
-            for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
-                nodes_in_partition_expr += vars.circuit_node[i][j];
-            }
-            std::snprintf(constr_name, sizeof(constr_name),
-                          "Partition %d - Exactly one circuit node", j);
-            model.addConstr(nodes_in_partition_expr == vars.partition_used[j],
-                            constr_name);
-
-            // Um vértice só pode estar no circuito em uma partição se de fato
-            // estiver naquela partição.
-            for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
-                std::snprintf(constr_name, sizeof(constr_name),
-                              "Partition %d - Circuit node %d validity", j,
-                              G.id(i));
-                model.addConstr(vars.circuit_node[i][j] <= vars.partition[i][j],
-                                constr_name);
-            }
-        }
-        return *this;
-    }
-
-    /**
      * Adiciona restrições de arestas de estrela.
      *
      * Uma aresta deve estar em uma estrela se ambos seus extremos estão na
@@ -294,16 +286,54 @@ class problem_constraints_generator {
                 std::snprintf(constr_name, sizeof(constr_name),
                               "Partition %d - Star edge {%d, %d}", j, G.id(u),
                               G.id(v));
-                model.addConstr(vars.star_edge[e][j] >=
-                                    vars.circuit_node[u][j] -
+                model.addConstr(vars.star_edge[e] >=
+                                    vars.circuit_partition_node[u][j] -
                                         2 * (1 - vars.partition[v][j]),
                                 constr_name);
-                model.addConstr(vars.star_edge[e][j] >=
-                                    vars.circuit_node[v][j] -
+                model.addConstr(vars.star_edge[e] >=
+                                    vars.circuit_partition_node[v][j] -
                                         2 * (1 - vars.partition[u][j]),
                                 constr_name);
             }
         }
+        return *this;
+    }
+
+    /**
+     * Adiciona restrições para vértices serem escolhidos no circuito.
+     */
+    problem_constraints_generator& add_circuit_node_constraints() {
+        for (int j = 0; j < N_PARTITIONS; j++) {
+            // Exatamente um vértice da partição está no circuito se ela for
+            // usada, ou nenhum, caso contrário.
+            GRBLinExpr nodes_in_partition_expr;
+            for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
+                nodes_in_partition_expr += vars.circuit_partition_node[i][j];
+            }
+            std::snprintf(constr_name, sizeof(constr_name),
+                          "Partition %d - Exactly one circuit node", j);
+            model.addConstr(nodes_in_partition_expr == vars.partition_used[j],
+                            constr_name);
+
+            // Um vértice só pode estar no circuito em uma partição se de fato
+            // estiver naquela partição.
+            for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
+                std::snprintf(constr_name, sizeof(constr_name),
+                              "Partition %d - Circuit node %d validity", j,
+                              G.id(i));
+                model.addConstr(vars.circuit_partition_node[i][j] <=
+                                    vars.partition[i][j],
+                                constr_name);
+            }
+        }
+
+        for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
+            for (int j = 0; j < N_PARTITIONS; j++) {
+                model.addConstr(vars.circuit_node[i] >=
+                                vars.circuit_partition_node[i][j]);
+            }
+        }
+
         return *this;
     }
 
@@ -317,11 +347,9 @@ class problem_constraints_generator {
             Graph::Node s = G.source(a), t = G.target(a);
             std::snprintf(constr_name, sizeof(constr_name),
                           "Circuit arc %d - Both ends in circuit", G.id(a));
-            GRBLinExpr expr;
-            for (int j = 0; j < N_PARTITIONS; j++) {
-                expr += vars.circuit_node[s][j] + vars.circuit_node[t][j];
-            }
-            model.addConstr(2 * vars.circuit_arc[a] <= expr, constr_name);
+            model.addConstr(2 * vars.circuit_arc[a] <=
+                                vars.circuit_node[s] + vars.circuit_node[t],
+                            constr_name);
         }
 
         // No máximo um dos arcos correspondentes a uma aresta pode ser
@@ -347,19 +375,14 @@ class problem_constraints_generator {
                 }
             }
 
-            GRBLinExpr is_circuit_node_expr;
-            for (int j = 0; j < N_PARTITIONS; j++) {
-                is_circuit_node_expr += vars.circuit_node[u][j];
-            }
-
             std::snprintf(constr_name, sizeof(constr_name),
                           "Circuit node %d - In-Degree 1", G.id(u));
-            model.addConstr(in_degree_expr == is_circuit_node_expr,
+            model.addConstr(in_degree_expr == vars.circuit_node[u],
                             constr_name);
 
             std::snprintf(constr_name, sizeof(constr_name),
                           "Circuit node %d - Out-Degree 1", G.id(u));
-            model.addConstr(out_degree_expr == is_circuit_node_expr,
+            model.addConstr(out_degree_expr == vars.circuit_node[u],
                             constr_name);
         }
 
@@ -393,7 +416,8 @@ class problem_constraints_generator {
             model.addConstr(vars.circuit_order[v] >=
                                 vars.circuit_order[u] + 1 -
                                     N_PARTITIONS * (1 - vars.circuit_arc[a]) -
-                                    N_PARTITIONS * vars.circuit_node[v][0],
+                                    N_PARTITIONS *
+                                        vars.circuit_partition_node[v][0],
                             constr_name);
         }
 
@@ -413,14 +437,9 @@ class problem_constraints_generator {
                 std::swap(u, v);
             }
 
-            GRBLinExpr is_circuit_node_expr;
-            for (int j = 0; j < N_PARTITIONS; j++) {
-                is_circuit_node_expr += vars.circuit_node[u][j];
-            }
-
-            model.addConstr(vars.circuit_node[u][0] >=
-                                vars.circuit_node[v][0] -
-                                    (1 - is_circuit_node_expr),
+            model.addConstr(vars.circuit_partition_node[u][0] >=
+                                vars.circuit_partition_node[v][0] -
+                                    (1 - vars.circuit_node[u]),
                             constr_name);
         }
         return *this;
@@ -460,7 +479,8 @@ struct solution_t {
         circuit_nodes.reserve(max_partition + 1);
         for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
             for (int j = 0; j <= max_partition; j++) {
-                if (vars.circuit_node[v][j].get(GRB_DoubleAttr_X) >= 0.5) {
+                if (vars.circuit_partition_node[v][j].get(GRB_DoubleAttr_X) >=
+                    0.5) {
                     circuit_nodes.push_back(v);
                     break;
                 }
@@ -649,8 +669,9 @@ solution_t solve(const GRBEnv& env, const problem_data& data) {
         .add_circuit_symmetry_breaking_constraints();
 
     model.update();
-    model.optimize();
     model.write("model.lp");
+
+    model.optimize();
     model.write("model.sol");
 
     return solution_t(data, vars);
@@ -672,7 +693,7 @@ void view(const solution_t& solution) {
     out << "}" << std::endl;
     out.close();
 
-    system("neato -q -Tpdf solution.dot -o solution.pdf");
+    system("circo -q -Tpdf solution.dot -o solution.pdf");
     system("okular solution.pdf");
 }
 
@@ -702,7 +723,7 @@ problem_data random_instance(const Graph& G, int seed) {
 
 int main(int argc, char* argv[]) {
     std::random_device rd;
-    int seed = rd();
+    int seed = 1495337369; // rd();
     std::cout << "seed: " << seed << std::endl;
 
     std::minstd_rand rng(seed);
@@ -711,7 +732,7 @@ int main(int argc, char* argv[]) {
     GRBEnv env;
     env.set(GRB_IntParam_Seed, grb_seed_dist(rng));
 
-    Graph G(16);
+    Graph G(20);
     auto instance = random_instance(G, seed);
 
     auto greedy_solution = greedy_approximation(instance);
