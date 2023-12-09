@@ -157,8 +157,8 @@ struct problem_vars {
         for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
             star_edge[e].resize(N_PARTITIONS);
             for (int j = 0; j < N_PARTITIONS; j++) {
-                std::snprintf(var_name, sizeof(var_name), "star_edge[%d,%d]",
-                              G.id(e), j);
+                std::snprintf(var_name, sizeof(var_name), "star_edge[%d,%d,%d]",
+                              G.id(G.u(e)), G.id(G.v(e)), j);
                 uint64_t cost = data.edge_cost[e];
                 star_edge[e][j] =
                     model.addVar(0.0, 1.0, cost, GRB_BINARY, var_name);
@@ -198,6 +198,13 @@ class problem_constraints_generator {
                                 constr_name);
             }
         }
+
+        GRBLinExpr expr;
+        for (int j = 0; j < N_PARTITIONS; j++) {
+            expr += vars.partition_used[j];
+        }
+        model.addConstr(expr >= 3, "At least 3 partitions");
+
         return *this;
     }
 
@@ -566,25 +573,25 @@ solution_t greedy_approximation(const problem_data& data) {
                     neighbors.push_back(v);
                 }
             }
-            std::sort(neighbors.begin(), neighbors.end(),
-                      [&](const Graph::Node& x, const Graph::Node& y) {
-                          return data.edge_cost[G.edge(u, x)] <
-                                 data.edge_cost[G.edge(u, y)];
-                      });
-
-            uint64_t used = data.node_weight[u];
-            uint64_t edge_cost = 0;
-            for (auto v : neighbors) {
-                edge_cost = data.edge_cost[G.edge(u, v)];
-                used += data.node_weight[v];
-                if (used > data.capacity) {
-                    break;
-                }
-                cost += edge_cost;
-                star.push_back(v);
-            }
 
             if (!neighbors.empty()) {
+                std::sort(neighbors.begin(), neighbors.end(),
+                          [&](const Graph::Node& x, const Graph::Node& y) {
+                              return data.edge_cost[G.edge(u, x)] <
+                                     data.edge_cost[G.edge(u, y)];
+                          });
+
+                uint64_t used = data.node_weight[u];
+                uint64_t edge_cost = 0;
+                for (auto v : neighbors) {
+                    edge_cost = data.edge_cost[G.edge(u, v)];
+                    used += data.node_weight[v];
+                    if (used > data.capacity) {
+                        break;
+                    }
+                    cost += edge_cost;
+                    star.push_back(v);
+                }
                 auto v = neighbors[neighbors.size() - 1];
                 auto worst_case = G.edge(u, v);
                 cost += data.circuit_cost_factor * data.edge_cost[worst_case];
@@ -708,8 +715,6 @@ int main(int argc, char* argv[]) {
     auto instance = random_instance(G, seed);
 
     auto greedy_solution = greedy_approximation(instance);
-    view(greedy_solution);
-
     auto cutoff = greedy_solution.cost();
     std::cout << "Heuristic cost: " << cutoff << std::endl;
 
