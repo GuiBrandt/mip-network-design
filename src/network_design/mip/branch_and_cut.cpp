@@ -170,8 +170,11 @@ void formulation_t::find_violated_cuts() {
     lemon::GomoryHu<Graph, Graph::EdgeMap<double>> gomory_hu(G, capacity);
     gomory_hu.run();
 
+    // Controla o número de cortes dependendo da profundidade da busca.
+    int n = 0, n_max = (size_t)getDoubleInfo(GRB_CB_MIPSOL_NODCNT) / 2;
+
     Graph::NodeMap<bool> cutmap(G);
-    for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
+    for (Graph::NodeIt u(G); u != lemon::INVALID && n <= n_max; ++u) {
         if (gomory_hu.predNode(u) == lemon::INVALID ||
             gomory_hu.predValue(u) > 2.0 - 1e-5) {
             continue;
@@ -179,19 +182,22 @@ void formulation_t::find_violated_cuts() {
 
         gomory_hu.minCutMap(u, gomory_hu.predNode(u), cutmap);
 
-        GRBLinExpr out_expr, in_expr;
+        GRBLinExpr out_expr;
+        // GRBLinExpr in_expr;
         for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
             Graph::Node s = G.source(a), t = G.target(a);
             if (cutmap[s] && !cutmap[t]) {
                 out_expr += vars.circuit_arc[a] + vars.star_arc[a] +
                             vars.star_arc[G.oppositeArc(a)];
-            } else if (!cutmap[s] && cutmap[t]) {
-                in_expr += vars.circuit_arc[a] + vars.star_arc[a] +
-                           vars.star_arc[G.oppositeArc(a)];
             }
+            // else if (!cutmap[s] && cutmap[t]) {
+            //     in_expr += vars.circuit_arc[a] + vars.star_arc[a] +
+            //                vars.star_arc[G.oppositeArc(a)];
+            // }
         }
         addLazy(out_expr >= 1);
-        addLazy(in_expr >= 1);
+        // addLazy(in_expr >= 1);
+        n++;
     }
 }
 
@@ -272,20 +278,24 @@ void formulation_t::find_violated_blossom() {
 }
 
 void formulation_t::callback() {
-    switch (where) {
-    case GRB_CB_MIPSOL:
-        find_violated_cuts();
-        break;
+    try {
+        switch (where) {
+        case GRB_CB_MIPSOL:
+            find_violated_cuts();
+            break;
 
-    case GRB_CB_MIPNODE:
-        if (getIntInfo(GRB_CB_MIPNODE_STATUS) == GRB_OPTIMAL &&
-            getDoubleInfo(GRB_CB_MIPNODE_OBJBST) / getDoubleInfo(GRB_CB_MIPNODE_OBJBND) <= 1.1) {
-            find_violated_blossom();
+        case GRB_CB_MIPNODE:
+            if (getIntInfo(GRB_CB_MIPNODE_STATUS) == GRB_OPTIMAL) {
+                // find_violated_blossom();
+            }
+            break;
+
+        default:
+            break;
         }
-        break;
-
-    default:
-        break;
+    } catch (const GRBException& ex) {
+        std::cerr << "ERROR: " << ex.getMessage() << " (" << ex.getErrorCode()
+                  << ")" << std::endl;
     }
 }
 
