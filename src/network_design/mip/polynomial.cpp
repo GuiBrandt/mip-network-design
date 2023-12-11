@@ -320,12 +320,8 @@ solution_t build_solution(const instance_t& data, const mip_vars_t& vars) {
     // Nós do circuito
     solution.circuit_nodes.reserve(max_partition + 1);
     for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
-        for (int j = 0; j <= max_partition; j++) {
-            if (vars.circuit_partition_node[v][j].get(GRB_DoubleAttr_X) >=
-                0.5) {
-                solution.circuit_nodes.push_back(v);
-                break;
-            }
+        if (vars.circuit_node[v].get(GRB_DoubleAttr_X) >= 0.5) {
+            solution.circuit_nodes.push_back(v);
         }
         if (solution.circuit_nodes.size() > max_partition) {
             break;

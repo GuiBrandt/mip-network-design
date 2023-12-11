@@ -26,21 +26,6 @@ struct mip_vars_t {
     NodePartitionVars partition;
 
     /**
-     * Variáveis indicadoras de uso das partições.
-     *
-     * `partition_used[j]` = 1 se a partição `j` tem algum nó, 0 caso contrário.
-     */
-    std::vector<GRBVar> partition_used;
-
-    /**
-     * Variáveis de incidência dos nós do circuito.
-     *
-     * `circuit_node[i][j]` = 1 se o nó `i` está no circuito e na partição `j`,
-     *                        0 caso contrário.
-     */
-    NodePartitionVars circuit_partition_node;
-
-    /**
      * Variáveis de incidência dos nós do circuito.
      *
      * `circuit_node[i]` = 1 se o nó `i` está no circuito, 0 caso contrário.
@@ -50,17 +35,17 @@ struct mip_vars_t {
     /**
      * Variáveis de incidência das arestas do circuito.
      *
-     * `circuit_edge[a]` = 1 se a aresta `a` está no circuito, 0 caso contrário.
+     * `circuit_edge[a]` = 1 se a aresta `e` está no circuito, 0 caso contrário.
      */
     Graph::EdgeMap<GRBVar> circuit_edge;
 
     /**
-     * Variáveis de incidência das arestas das estrelas.
+     * Variáveis de incidência dos arcos das estrelas.
      *
-     * `star_edge[e]` = 1 se a aresta `e` está em alguma estrela, 0 caso
+     * `star_arc[a]` = 1 se o arco `a` está em alguma estrela, 0 caso
      *                  contrário.
      */
-    Graph::EdgeMap<GRBVar> star_edge;
+    Graph::ArcMap<GRBVar> star_arc;
 
     mip_vars_t(GRBModel&, const instance_t&);
 };
@@ -84,12 +69,6 @@ class formulation_t : public GRBCallback {
     void add_used_partition_constraints();
 
     /**
-     * Adiciona restrições forçando as partições de menor índice a serem usadas
-     * para evitar simetrias.
-     */
-    void add_partition_symmetry_breaking_constraints();
-
-    /**
      * Adiciona restrições de empacotamento dos vértices nas partições.
      */
     void add_partition_packing_constraints();
@@ -100,22 +79,12 @@ class formulation_t : public GRBCallback {
      * Uma aresta deve estar em uma estrela se ambos seus extremos estão na
      * mesma partição e um deles está no circuito.
      */
-    void add_star_edge_constraints();
-
-    /**
-     * Adiciona restrições para vértices serem escolhidos no circuito.
-     */
-    void add_circuit_node_constraints();
+    void add_star_arc_constraints();
 
     /**
      * Adiciona restrições para arcos no circuito.
      */
     void add_circuit_edge_constraints();
-
-    /**
-     * Adiciona restrições de quebra de simetria para os vértices no circuito.
-     */
-    void add_circuit_symmetry_breaking_constraints();
 
   protected:
     void callback() override;

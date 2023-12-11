@@ -3,16 +3,17 @@
 #include <limits>
 
 #include <lemon/gomory_hu.h>
+#include <lemon/list_graph.h>
 
 namespace network_design {
 namespace mip {
 namespace branch_and_cut {
 
+static char var_name[32];
+
 mip_vars_t::mip_vars_t(GRBModel& model, const instance_t& data)
-    : partition(data.graph), partition_used(data.graph.nodeNum()),
-      circuit_partition_node(data.graph), circuit_node(data.graph),
-      circuit_edge(data.graph), star_edge(data.graph) {
-    static char var_name[32];
+    : partition(data.graph), circuit_node(data.graph), circuit_edge(data.graph),
+      star_arc(data.graph) {
 
     const auto& G = data.graph;
     const int N_PARTITIONS = G.nodeNum();
@@ -28,51 +29,33 @@ mip_vars_t::mip_vars_t(GRBModel& model, const instance_t& data)
         }
     }
 
-    // Uso das partições
-    for (int j = 0; j < N_PARTITIONS; j++) {
-        std::snprintf(var_name, sizeof(var_name), "partition_used[%d]", j);
-        partition_used[j] = model.addVar(0.0, 1.0, 0.0, GRB_BINARY, var_name);
-        partition_used[j].set(GRB_IntAttr_PoolIgnore, 1);
-    }
-
     // Nós no circuito
     for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
-        circuit_partition_node[i].resize(N_PARTITIONS);
-        for (int j = 0; j < N_PARTITIONS; j++) {
-            std::snprintf(var_name, sizeof(var_name),
-                          "circuit_partition_node[%d,%d]", G.id(i), j);
-            circuit_partition_node[i][j] =
-                model.addVar(0.0, 1.0, 0.0, GRB_BINARY, var_name);
-            circuit_partition_node[i][j].set(GRB_IntAttr_PoolIgnore, 1);
-        }
-
         std::snprintf(var_name, sizeof(var_name), "circuit_node[%d]", G.id(i));
         circuit_node[i] = model.addVar(0.0, 1.0, 0.0, GRB_BINARY, var_name);
         circuit_node[i].set(GRB_IntAttr_PoolIgnore, 1);
     }
 
-    // Arestas no circuito
+    // Arcos no circuito
     for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
-        Graph::Node u = G.u(e), v = G.v(e);
         std::snprintf(var_name, sizeof(var_name), "circuit_edge[%d,%d]",
-                      G.id(u), G.id(v));
-        double cost = data.circuit_cost_factor * data.edge_cost[G.edge(u, v)];
+                      G.id(G.u(e)), G.id(G.v(e)));
+        double cost = data.circuit_cost_factor * data.edge_cost[e];
 
         // Desabilita arestas sem peso definido
         bool usable = cost < 1e99;
         circuit_edge[e] = model.addVar(0.0, usable, cost, GRB_BINARY, var_name);
     }
 
-    // Arestas nas estrelas
-    for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
-        std::snprintf(var_name, sizeof(var_name), "star_edge[%d,%d]",
-                      G.id(G.u(e)), G.id(G.v(e)));
-        double cost = data.edge_cost[e];
+    // Arcos nas estrelas
+    for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
+        std::snprintf(var_name, sizeof(var_name), "star_arc[%d,%d]",
+                      G.id(G.source(a)), G.id(G.target(a)));
+        double cost = data.edge_cost[a];
 
         // Desabilita arestas sem peso definido
         bool usable = cost < 1e99;
-        star_edge[e] = model.addVar(0.0, usable, cost, GRB_BINARY, var_name);
-        star_edge[e].set(GRB_IntAttr_BranchPriority, -1000);
+        star_arc[a] = model.addVar(0.0, usable, cost, GRB_BINARY, var_name);
     }
 }
 
@@ -86,11 +69,8 @@ formulation_t::formulation_t(const instance_t& instance, const GRBEnv& env)
 
     add_used_partition_constraints();
     add_partition_packing_constraints();
-    add_partition_symmetry_breaking_constraints();
-    add_star_edge_constraints();
-    add_circuit_node_constraints();
+    add_star_arc_constraints();
     add_circuit_edge_constraints();
-    add_circuit_symmetry_breaking_constraints();
 
     model.update();
     model.write("model.lp");
@@ -99,30 +79,22 @@ formulation_t::formulation_t(const instance_t& instance, const GRBEnv& env)
 static char constr_name[64];
 
 void formulation_t::add_used_partition_constraints() {
-    for (int j = 0; j < N_PARTITIONS; j++) {
+    for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
         GRBLinExpr expr;
-        for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
+        for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
             std::snprintf(constr_name, sizeof(constr_name),
-                          "Partition %d - Used with node %d", j, G.id(i));
-            model.addConstr(vars.partition_used[j] >= vars.partition[i][j],
+                          "Partition %d - Used with node %d", G.id(u), G.id(v));
+            model.addConstr(vars.circuit_node[u] >= vars.partition[v][G.id(u)],
                             constr_name);
         }
+        model.addConstr(vars.partition[u][G.id(u)] >= vars.circuit_node[u]);
     }
 
     GRBLinExpr expr;
-    for (int j = 0; j < N_PARTITIONS; j++) {
-        expr += vars.partition_used[j];
+    for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
+        expr += vars.circuit_node[u];
     }
     model.addConstr(expr >= 3, "At least 3 partitions");
-}
-
-void formulation_t::add_partition_symmetry_breaking_constraints() {
-    for (int j = 1; j < N_PARTITIONS; j++) {
-        std::snprintf(constr_name, sizeof(constr_name),
-                      "Partition %d - Symmetry breaking", j);
-        model.addConstr(vars.partition_used[j] <= vars.partition_used[j - 1],
-                        constr_name);
-    }
 }
 
 void formulation_t::add_partition_packing_constraints() {
@@ -149,55 +121,24 @@ void formulation_t::add_partition_packing_constraints() {
     }
 }
 
-void formulation_t::add_star_edge_constraints() {
-    for (int j = 0; j < N_PARTITIONS; j++) {
-        for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
-            Graph::Node u = G.u(e), v = G.v(e);
-            std::snprintf(constr_name, sizeof(constr_name),
-                          "Partition %d - Star edge {%d, %d}", j, G.id(u),
-                          G.id(v));
-            model.addConstr(vars.star_edge[e] >=
-                                vars.circuit_partition_node[u][j] -
-                                    2 * (1 - vars.partition[v][j]),
-                            constr_name);
-            model.addConstr(vars.star_edge[e] >=
-                                vars.circuit_partition_node[v][j] -
-                                    2 * (1 - vars.partition[u][j]),
-                            constr_name);
-        }
-    }
-}
-
-void formulation_t::add_circuit_node_constraints() {
-    for (int j = 0; j < N_PARTITIONS; j++) {
-        // Exatamente um vértice da partição está no circuito se ela for
-        // usada, ou nenhum, caso contrário.
-        GRBLinExpr nodes_in_partition_expr;
-        for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
-            nodes_in_partition_expr += vars.circuit_partition_node[i][j];
-        }
-        std::snprintf(constr_name, sizeof(constr_name),
-                      "Partition %d - Exactly one circuit node", j);
-        model.addConstr(nodes_in_partition_expr == vars.partition_used[j],
+void formulation_t::add_star_arc_constraints() {
+    for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
+        Graph::Node s = G.source(a), t = G.target(a);
+        std::snprintf(constr_name, sizeof(constr_name), "Star arc (%d, %d)",
+                      G.id(s), G.id(t));
+        model.addConstr(vars.star_arc[a] >=
+                            vars.circuit_node[t] -
+                                2 * (1 - vars.partition[s][G.id(t)]),
                         constr_name);
-
-        // Um vértice só pode estar no circuito em uma partição se de fato
-        // estiver naquela partição.
-        for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
-            std::snprintf(constr_name, sizeof(constr_name),
-                          "Partition %d - Circuit node %d validity", j,
-                          G.id(i));
-            model.addConstr(vars.circuit_partition_node[i][j] <=
-                                vars.partition[i][j],
-                            constr_name);
-        }
     }
-
-    for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
-        for (int j = 0; j < N_PARTITIONS; j++) {
-            model.addConstr(vars.circuit_node[i] >=
-                            vars.circuit_partition_node[i][j]);
+    for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
+        std::snprintf(constr_name, sizeof(constr_name),
+                      "Star node %d out-degree 1", G.id(v));
+        GRBLinExpr expr;
+        for (Graph::OutArcIt a(G, v); a != lemon::INVALID; ++a) {
+            expr += vars.star_arc[a];
         }
+        model.addConstr(expr == 1 - vars.circuit_node[v], constr_name);
     }
 }
 
@@ -216,10 +157,8 @@ void formulation_t::add_circuit_edge_constraints() {
     // Todo vértice no circuito deve ter grau 2.
     for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
         GRBLinExpr degree_expr;
-        for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
-            if (u != v) {
-                degree_expr += vars.circuit_edge[G.edge(u, v)];
-            }
+        for (Graph::IncEdgeIt e(G, u); e != lemon::INVALID; ++e) {
+            degree_expr += vars.circuit_edge[e];
         }
 
         std::snprintf(constr_name, sizeof(constr_name),
@@ -228,46 +167,17 @@ void formulation_t::add_circuit_edge_constraints() {
     }
 }
 
-void formulation_t::add_circuit_symmetry_breaking_constraints() {
-    // O vértice na primeira partição tem ID menor que todos os outros
-    // vértices no ciclo. Elimina simetrias de rotação.
+void formulation_t::callback() {
+    if (where != GRB_CB_MIPSOL) {
+        return;
+    }
+
+    Graph::EdgeMap<double> capacity(G);
     for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
         Graph::Node u = G.u(e), v = G.v(e);
-
-        if (G.id(u) > G.id(v)) {
-            std::swap(u, v);
-        }
-
-        model.addConstr(vars.circuit_partition_node[u][0] >=
-                            vars.circuit_partition_node[v][0] -
-                                (1 - vars.circuit_node[u]),
-                        constr_name);
-    }
-}
-
-void formulation_t::callback() {
-    Graph::EdgeMap<double> capacity(G);
-
-    switch (where) {
-    case GRB_CB_MIPSOL: {
-        for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
-            capacity[e] = getSolution(vars.circuit_edge[e]) +
-                          getSolution(vars.star_edge[e]);
-        }
-        break;
-    }
-    case GRB_CB_MIPNODE: {
-        if (getIntInfo(GRB_CB_MIPNODE_STATUS) != GRB_OPTIMAL) {
-            return;
-        }
-        for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
-            capacity[e] = getNodeRel(vars.circuit_edge[e]) +
-                          getNodeRel(vars.star_edge[e]);
-        }
-        break;
-    }
-    default:
-        return;
+        capacity[e] = getSolution(vars.circuit_edge[G.edge(u, v)]) +
+                      getSolution(vars.star_arc[G.arc(u, v)]) +
+                      getSolution(vars.star_arc[G.arc(v, u)]);
     }
 
     lemon::GomoryHu<Graph, Graph::EdgeMap<double>> gomory_hu(G, capacity);
@@ -284,11 +194,12 @@ void formulation_t::callback() {
 
         GRBLinExpr expr;
         for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
-            if (cutmap[G.u(e)] != cutmap[G.v(e)]) {
-                expr += vars.circuit_edge[e] + vars.star_edge[e];
+            Graph::Node u = G.u(e), v = G.v(e);
+            if (cutmap[u] != cutmap[v]) {
+                expr += vars.circuit_edge[G.edge(u, v)] +
+                        vars.star_arc[G.arc(u, v)] + vars.star_arc[G.arc(v, u)];
             }
         }
-
         addLazy(expr >= 1);
     }
 }
@@ -298,46 +209,71 @@ solution_t build_solution(const instance_t& data, const mip_vars_t& vars) {
 
     const auto& G = data.graph;
 
+    std::cout << "digraph D {" << std::endl;
+    for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
+        Graph::Node s = G.source(a), t = G.target(a);
+        if (vars.star_arc[a].get(GRB_DoubleAttr_X) >= 0.5) {
+            std::cout << "\t" << G.id(s) << " -> " << G.id(t)
+                      << " [color=blue];" << std::endl;
+        }
+    }
+    for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
+        Graph::Node s = G.u(e), t = G.v(e);
+        if (vars.circuit_edge[e].get(GRB_DoubleAttr_X) >= 0.5) {
+            std::cout << "\t" << G.id(s) << " -> " << G.id(t)
+                      << " [color=red, dir=none];" << std::endl;
+        }
+    }
+    std::cout << "}" << std::endl;
+
     // Partições
-    int max_partition = 0;
+    std::vector<int> partition_map(G.nodeNum());
+    for (int j = 0; j < G.nodeNum(); j++) {
+        partition_map[j] = j;
+    }
+
+    int max_part = -1;
+    for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
+        if (vars.circuit_node[v].get(GRB_DoubleAttr_X) >= 0.5) {
+            partition_map[G.id(v)] = ++max_part;
+        }
+    }
+
     for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
         for (int j = 0; j < G.nodeNum(); j++) {
             if (vars.partition[i][j].get(GRB_DoubleAttr_X) >= 0.5) {
-                solution.partition[i] = j;
-                if (j > max_partition) {
-                    max_partition = j;
-                }
+                solution.partition[i] = partition_map[j];
             }
         }
     }
 
-    // Nós do circuito
-    solution.circuit_nodes.reserve(max_partition + 1);
+    // Nós do circuito de acordo com a ordem do circuito
+    Graph::Node current, prev;
     for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
-        for (int j = 0; j <= max_partition; j++) {
-            if (vars.circuit_partition_node[v][j].get(GRB_DoubleAttr_X) >=
-                0.5) {
-                solution.circuit_nodes.push_back(v);
-                break;
-            }
-        }
-        if (solution.circuit_nodes.size() > max_partition) {
+        if (vars.circuit_node[v].get(GRB_DoubleAttr_X) >= 0.5) {
+            current = v;
             break;
         }
     }
 
-    assert(solution.circuit_nodes.size() == max_partition + 1);
+    solution.circuit_nodes.reserve(max_part + 1);
+    do {
+        solution.circuit_nodes.push_back(current);
+        for (Graph::OutArcIt a(G, current); a != lemon::INVALID; ++a) {
+            auto target = G.target(a);
+            if (target != prev &&
+                vars.circuit_edge[a].get(GRB_DoubleAttr_X) >= 0.5) {
+                prev = current;
+                current = target;
+                break;
+            }
+        }
+    } while (current != solution.circuit_nodes[0]);
 
-    // Ordena os nós de acordo com a ordem do circuito
-    // TODO:
-    // std::sort(solution.circuit_nodes.begin(), solution.circuit_nodes.end(),
-    //           [&vars](const Graph::Node& u, const Graph::Node& v) {
-    //               return vars.circuit_order[u].get(GRB_DoubleAttr_X) <=
-    //                      vars.circuit_order[v].get(GRB_DoubleAttr_X);
-    //           });
+    assert(solution.circuit_nodes.size() == max_part + 1);
 
     // Índice reverso para a ordem das partições no circuito
-    solution.partition_repr.resize(max_partition + 1);
+    solution.partition_repr.resize(max_part + 1);
     for (auto v : solution.circuit_nodes) {
         solution.partition_repr[solution.partition[v]] = v;
     }

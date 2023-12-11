@@ -26,11 +26,11 @@ int main(int argc, char* argv[]) {
         std::exit(1);
     }
 
-    auto instance = network_design::read_instance(argv[1]);
-
     std::random_device rd;
     int seed = rd();
     std::cout << "Seed: " << seed << std::endl;
+
+    auto instance = network_design::read_instance(argv[1]);
 
     std::minstd_rand rng(seed);
     std::uniform_int_distribution<int> grb_seed_dist(0, GRB_MAXINT);
