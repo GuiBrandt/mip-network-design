@@ -19,13 +19,6 @@ struct mip_vars_t {
     using NodePartitionVars = Graph::NodeMap<std::vector<GRBVar>>;
 
     /**
-     * Variáveis de incidência das partições.
-     *
-     * `partition[i][j]` = 1 se o nó `i` está na partição `j`, 0 caso contrário.
-     */
-    NodePartitionVars partition;
-
-    /**
      * Variáveis de incidência dos nós do circuito.
      *
      * `circuit_node[i]` = 1 se o nó `i` está no circuito, 0 caso contrário.
@@ -33,11 +26,11 @@ struct mip_vars_t {
     Graph::NodeMap<GRBVar> circuit_node;
 
     /**
-     * Variáveis de incidência das arestas do circuito.
+     * Variáveis de incidência dos arcos do circuito.
      *
-     * `circuit_edge[a]` = 1 se a aresta `e` está no circuito, 0 caso contrário.
+     * `circuit_arc[a]` = 1 se a aresta `a` está no circuito, 0 caso contrário.
      */
-    Graph::EdgeMap<GRBVar> circuit_edge;
+    Graph::ArcMap<GRBVar> circuit_arc;
 
     /**
      * Variáveis de incidência dos arcos das estrelas.
@@ -63,15 +56,9 @@ class formulation_t : public GRBCallback {
     const int N_PARTITIONS;
 
     /**
-     * Adiciona restrições forçando os valores das variáveis de uso das
-     * partições.
-     */
-    void add_used_partition_constraints();
-
-    /**
      * Adiciona restrições de empacotamento dos vértices nas partições.
      */
-    void add_partition_packing_constraints();
+    void add_partition_constraints();
 
     /**
      * Adiciona restrições de arestas de estrela.
@@ -84,7 +71,7 @@ class formulation_t : public GRBCallback {
     /**
      * Adiciona restrições para arcos no circuito.
      */
-    void add_circuit_edge_constraints();
+    void add_circuit_arc_constraints();
 
   protected:
     void callback() override;
