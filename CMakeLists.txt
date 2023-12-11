@@ -33,7 +33,7 @@ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 find_package(GUROBI REQUIRED)
 find_package(LEMON REQUIRED)
 
-include_directories(${GUROBI_INCLUDE_DIRS} ${LEMON_INCLUDE_DIRS} include)
+include_directories(${GUROBI_INCLUDE_DIRS} ${LEMON_INCLUDE_DIRS} include include/mylib)
 
 add_library(mylib
     src/mylib/myutils.cpp
@@ -42,8 +42,16 @@ add_library(mylib
     src/mylib/geompack.cpp
     src/mylib/deprecated.cpp)
 
+add_library(network_design
+    src/network_design/defs.cpp
+    src/network_design/heuristics.cpp
+    src/network_design/mip/polynomial.cpp
+    src/network_design/utils.cpp)
+
 add_executable(mo420-p1 src/p1.cpp)
+
 target_link_libraries(mo420-p1
     mylib
+    network_design
     ${LEMON_LIBRARY}
     ${GUROBI_CXX_LIBRARY} ${GUROBI_C_LIBRARY})
