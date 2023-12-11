@@ -73,6 +73,16 @@ class formulation_t : public GRBCallback {
      */
     void add_circuit_arc_constraints();
 
+    /**
+     * Adiciona restrições de corte violadas de forma preguiçosa.
+     */
+    void find_violated_cuts();
+
+    /**
+     * Adiciona restrições blossom violadas de forma preguiçosa.
+     */
+    void find_violated_blossom();
+
   protected:
     void callback() override;
 

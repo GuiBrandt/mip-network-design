@@ -156,11 +156,7 @@ void formulation_t::add_circuit_arc_constraints() {
     }
 }
 
-void formulation_t::callback() {
-    if (where != GRB_CB_MIPSOL) {
-        return;
-    }
-
+void formulation_t::find_violated_cuts() {
     Graph::EdgeMap<double> capacity(G);
     for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
         Graph::Node u = G.u(e), v = G.v(e);
@@ -196,6 +192,100 @@ void formulation_t::callback() {
         }
         addLazy(out_expr >= 1);
         addLazy(in_expr >= 1);
+    }
+}
+
+void formulation_t::find_violated_blossom() {
+    Graph::EdgeMap<double> capacity(G);
+    for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
+        Graph::Node u = G.u(e), v = G.v(e);
+        Graph::Arc a = G.arc(u, v), b = G.arc(v, u);
+        capacity[e] =
+            getNodeRel(vars.circuit_arc[a]) + 2 * getNodeRel(vars.star_arc[a]) +
+            getNodeRel(vars.circuit_arc[b]) + 2 * getNodeRel(vars.star_arc[b]);
+    }
+
+    lemon::GomoryHu<Graph, Graph::EdgeMap<double>> gomory_hu(G, capacity);
+    gomory_hu.run();
+
+    Graph::NodeMap<int> in_degree(G);
+    Graph::NodeMap<int> cut_size(G);
+
+    std::list<Graph::Node> sources, topological_sort;
+    for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
+        in_degree[v] = 0;
+        cut_size[v] = 1;
+    }
+
+    for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
+        auto v = gomory_hu.predNode(u);
+        if (v == lemon::INVALID) {
+            continue;
+        }
+        in_degree[v]++;
+    }
+
+    for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
+        if (in_degree[v] == 0) {
+            sources.push_back(v);
+        }
+    }
+
+    while (!sources.empty()) {
+        auto u = sources.front();
+        sources.pop_front();
+        topological_sort.push_back(u);
+        auto v = gomory_hu.predNode(u);
+        if (v != lemon::INVALID) {
+            in_degree[v]--;
+            if (in_degree[v] == 0) {
+                sources.push_back(v);
+            }
+        }
+    }
+
+    while (!topological_sort.empty()) {
+        auto u = topological_sort.front();
+        topological_sort.pop_front();
+        auto v = gomory_hu.predNode(u);
+        if (v != lemon::INVALID) {
+            cut_size[v] = cut_size[v] + cut_size[u];
+        }
+    }
+
+    for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
+        GRBLinExpr expr;
+        if (cut_size[u] % 2 == 0 || gomory_hu.predValue(u) > 1.0 - 1e-5) {
+            continue;
+        }
+
+        for (decltype(gomory_hu)::MinCutEdgeIt e(gomory_hu, u,
+                                                 gomory_hu.predNode(u));
+             e != lemon::INVALID; ++e) {
+            Graph::Arc a = G.arc(G.u(e), G.v(e)), b = G.oppositeArc(a);
+            expr += vars.circuit_arc[a] + vars.circuit_arc[b] +
+                    2 * (vars.star_arc[a] + vars.star_arc[b]);
+        }
+
+        addCut(expr >= 1.0);
+    }
+}
+
+void formulation_t::callback() {
+    switch (where) {
+    case GRB_CB_MIPSOL:
+        find_violated_cuts();
+        break;
+
+    case GRB_CB_MIPNODE:
+        if (getIntInfo(GRB_CB_MIPNODE_STATUS) == GRB_OPTIMAL &&
+            getDoubleInfo(GRB_CB_MIPNODE_OBJBST) / getDoubleInfo(GRB_CB_MIPNODE_OBJBND) <= 1.1) {
+            find_violated_blossom();
+        }
+        break;
+
+    default:
+        break;
     }
 }
 
