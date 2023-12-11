@@ -4,6 +4,7 @@
 
 #include <lemon/gomory_hu.h>
 #include <lemon/list_graph.h>
+#include <lemon/unionfind.h>
 
 namespace network_design {
 namespace mip {
@@ -86,18 +87,12 @@ void formulation_t::add_partition_constraints() {
 }
 
 void formulation_t::add_star_arc_constraints() {
+    // Uma aresta de estrela sai de um nó do circuito para um nó fora do
+    // circuito.
     for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
         Graph::Node s = G.source(a), t = G.target(a);
-        std::snprintf(constr_name, sizeof(constr_name), "Star arc (%d, %d)",
-                      G.id(s), G.id(t));
-
-        // Pelo menos um dos extremos de um arco de estrela está no cicruito.
-        model.addConstr(vars.star_arc[a] <=
-                        vars.circuit_node[s] + vars.circuit_node[t]);
-
-        // No máximo um dos extremos de um arco de estrela está no cicruito.
-        model.addConstr(2 * vars.star_arc[a] <=
-                        3 - (vars.circuit_node[s] + vars.circuit_node[t]));
+        model.addConstr(vars.star_arc[a] <= vars.circuit_node[s]);
+        model.addConstr(vars.star_arc[a] <= 1 - vars.circuit_node[t]);
     }
 
     // Exatamente um arco de estrela entra num nó que não está no circuito, e
@@ -128,12 +123,8 @@ void formulation_t::add_circuit_arc_constraints() {
     // circuito.
     for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
         Graph::Node s = G.source(a), t = G.target(a);
-        std::snprintf(constr_name, sizeof(constr_name),
-                      "Circuit arc (%d, %d) - Both ends in circuit", G.id(s),
-                      G.id(t));
-        model.addConstr(vars.circuit_arc[a] <=
-                            vars.circuit_node[s] + vars.circuit_node[t],
-                        constr_name);
+        model.addConstr(vars.circuit_arc[a] <= vars.circuit_node[s]);
+        model.addConstr(vars.circuit_arc[a] <= vars.circuit_node[t]);
     }
 
     // Todo vértice no circuito deve ter grau de entrada e saída 1.
@@ -167,14 +158,59 @@ void formulation_t::find_violated_cuts() {
                       2 * getSolution(vars.star_arc[b]);
     }
 
-    lemon::GomoryHu<Graph, Graph::EdgeMap<double>> gomory_hu(G, capacity);
+    std::vector<Graph::Edge> frac_edges, one_edges;
+    for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
+        if (capacity[e] > 1 - 1e-4) {
+            one_edges.push_back(e);
+        } else if (capacity[e] > 1e-4) {
+            frac_edges.push_back(e);
+        }
+    }
+
+    Graph::NodeMap<int> aux_map(G);
+    lemon::UnionFind<Graph::NodeMap<int>> components(aux_map);
+    for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
+        components.insert(v);
+    }
+    for (auto e : one_edges) {
+        components.join(G.u(e), G.v(e));
+    }
+
+    int num_components = 0;
+    std::vector<int> component_index(G.nodeNum(), -1);
+    for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
+        int component = components.find(v);
+        if (component_index[component] < 0) {
+            component_index[component] = num_components++;
+        }
+    }
+
+    using LGraph = lemon::ListGraph;
+
+    LGraph H;
+
+    std::vector<LGraph::Node> H_index(num_components);
+    for (int i = 0; i < num_components; i++) {
+        H_index[i] = H.addNode();
+    }
+
+    LGraph::EdgeMap<double> H_capacity(H);
+    for (auto e : frac_edges) {
+        auto u = G.u(e), v = G.v(e);
+        auto hu = H_index[component_index[components.find(u)]],
+             hv = H_index[component_index[components.find(v)]];
+        auto he = H.addEdge(hu, hv);
+        H_capacity[he] = capacity[e];
+    }
+
+    lemon::GomoryHu<LGraph, LGraph::EdgeMap<double>> gomory_hu(H, H_capacity);
     gomory_hu.run();
 
     // Controla o número de cortes dependendo da profundidade da busca.
     int n = 0, n_max = (size_t)getDoubleInfo(GRB_CB_MIPSOL_NODCNT) / 2;
 
-    Graph::NodeMap<bool> cutmap(G);
-    for (Graph::NodeIt u(G); u != lemon::INVALID && n <= n_max; ++u) {
+    LGraph::NodeMap<bool> cutmap(H, false);
+    for (LGraph::NodeIt u(H); u != lemon::INVALID && n <= n_max; ++u) {
         if (gomory_hu.predNode(u) == lemon::INVALID ||
             gomory_hu.predValue(u) > 2.0 - 1e-5) {
             continue;
@@ -183,20 +219,17 @@ void formulation_t::find_violated_cuts() {
         gomory_hu.minCutMap(u, gomory_hu.predNode(u), cutmap);
 
         GRBLinExpr out_expr;
-        // GRBLinExpr in_expr;
         for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
-            Graph::Node s = G.source(a), t = G.target(a);
-            if (cutmap[s] && !cutmap[t]) {
+            auto s = G.source(a), t = G.target(a);
+            auto hs = H_index[component_index[components.find(s)]],
+                 ht = H_index[component_index[components.find(t)]];
+            if (cutmap[hs] && !cutmap[ht]) {
                 out_expr += vars.circuit_arc[a] + vars.star_arc[a] +
                             vars.star_arc[G.oppositeArc(a)];
             }
-            // else if (!cutmap[s] && cutmap[t]) {
-            //     in_expr += vars.circuit_arc[a] + vars.star_arc[a] +
-            //                vars.star_arc[G.oppositeArc(a)];
-            // }
         }
+
         addLazy(out_expr >= 1);
-        // addLazy(in_expr >= 1);
         n++;
     }
 }
