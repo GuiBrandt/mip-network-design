@@ -10,7 +10,9 @@ namespace network_design {
 
 void view(const solution_t&);
 
-instance_t random_instance(const Graph&, int seed);
+std::unique_ptr<instance_t> random_instance(const Graph&, int seed);
+
+std::unique_ptr<instance_t> read_instance(std::string filename);
 
 }; // namespace network_design
 

@@ -1,5 +1,5 @@
-#ifndef _NETWORK_DESIGN_MIP_POLYNOMIAL_HPP
-#define _NETWORK_DESIGN_MIP_POLYNOMIAL_HPP
+#ifndef _NETWORK_DESIGN_MIP_BRANCH_AND_CUT_HPP
+#define _NETWORK_DESIGN_MIP_BRANCH_AND_CUT_HPP
 
 #include <cassert>
 #include <vector>
@@ -10,7 +10,7 @@
 
 namespace network_design {
 namespace mip {
-namespace polynomial {
+namespace branch_and_cut {
 
 /**
  * Estrutura para as variáveis da formulação polinomial do problema.
@@ -48,22 +48,11 @@ struct mip_vars_t {
     Graph::NodeMap<GRBVar> circuit_node;
 
     /**
-     * Ordem de um nó no circuito.
+     * Variáveis de incidência das arestas do circuito.
      *
-     * Assume valores de 0 a N - 1, onde N é o número de partições usadas na
-     * solução.
-     *
-     * Para nós fora do circuito, o valor é irrelevante.
+     * `circuit_edge[a]` = 1 se a aresta `a` está no circuito, 0 caso contrário.
      */
-    Graph::NodeMap<GRBVar> circuit_order;
-
-    /**
-     * Variáveis de incidência dos arcos (considerando a versão orientada do
-     * grafo) do circuito.
-     *
-     * `circuit_arc[a]` = 1 se o arco `a` está no circuito, 0 caso contrário.
-     */
-    Graph::ArcMap<GRBVar> circuit_arc;
+    Graph::EdgeMap<GRBVar> circuit_edge;
 
     /**
      * Variáveis de incidência das arestas das estrelas.
@@ -79,7 +68,7 @@ struct mip_vars_t {
 /**
  * Classe para a formulação polinomial do problema.
  */
-class formulation_t {
+class formulation_t : public GRBCallback {
   private:
     const instance_t& instance;
     GRBModel model;
@@ -121,26 +110,23 @@ class formulation_t {
     /**
      * Adiciona restrições para arcos no circuito.
      */
-    void add_circuit_arc_constraints();
-
-    /**
-     * Adiciona restrições de ordem para os vértices no circuito. Garante que o
-     * circuito de fato forma um ciclo (e não um 2-fator qualquer).
-     */
-    void add_circuit_order_constraints();
+    void add_circuit_edge_constraints();
 
     /**
      * Adiciona restrições de quebra de simetria para os vértices no circuito.
      */
     void add_circuit_symmetry_breaking_constraints();
 
+  protected:
+    void callback() override;
+
   public:
     formulation_t(const instance_t&, const GRBEnv& env);
     solution_t solve();
 };
 
-} // namespace polynomial
+} // namespace branch_and_cut
 } // namespace mip
 } // namespace network_design
 
-#endif // _NETWORK_DESIGN_MIP_POLYNOMIAL_HPP
+#endif // _NETWORK_DESIGN_MIP_BRANCH_AND_CUT_HPP

@@ -25,7 +25,7 @@ std::vector<Graph::Node> pack_star(Graph::Node u,
                          data.edge_cost[G.edge(u, y)] * data.node_weight[y];
               });
 
-    uint64_t used = data.node_weight[u];
+    double used = data.node_weight[u];
     for (auto v : neighbors) {
         used += data.node_weight[v];
         if (used > data.capacity) {
@@ -49,13 +49,13 @@ solution_t greedy_heuristic(const instance_t& data) {
 
     int part = -1;
     while (!node_pool.empty()) {
-        uint64_t best_cost = std::numeric_limits<uint64_t>::max();
+        double best_cost = std::numeric_limits<double>::max();
         std::vector<Graph::Node> best_star;
         Graph::Node best_center;
 
         for (auto u : node_pool) {
             auto star = pack_star(u, node_pool, data);
-            uint64_t cost = 0;
+            double cost = 0;
             for (auto v : star) {
                 if (u != v) {
                     cost += data.edge_cost[G.edge(u, v)];

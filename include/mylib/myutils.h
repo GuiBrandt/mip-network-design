@@ -125,15 +125,12 @@ inline int hex2int(string s){
   return(d);
 }
 
-
+// In C++17 we can use
+// #include <filesystem>
+// bool exist = std::filesystem::exists(filename);
 
 inline bool FileExists(const string& filename)
-{
-    ifstream f(filename.c_str());
-    return f.is_open();
-};
-
-
+{ifstream f(filename.c_str()); return f.is_open(); };
 
 
 //====================================================================================================

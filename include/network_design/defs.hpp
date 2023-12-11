@@ -14,23 +14,27 @@ using Graph = lemon::FullGraph;
  */
 struct instance_t {
     /// Grafo da instância.
-    const Graph& graph;
+    Graph graph;
 
     /// Função de custo das arestas.
-    Graph::EdgeMap<uint64_t> edge_cost;
+    Graph::EdgeMap<double> edge_cost;
 
     /// Função de peso dos vértices.
-    Graph::NodeMap<uint64_t> node_weight;
+    Graph::NodeMap<double> node_weight;
 
     /// Capacidade máxima das partições.
-    uint64_t capacity;
+    double capacity;
 
     /// Fator multiplicador de custo das arestas no circuito (Gama).
-    uint64_t circuit_cost_factor;
+    double circuit_cost_factor;
 
     instance_t() = delete;
-    instance_t(const Graph&);
-    instance_t(const instance_t&);
+
+    // Construtor de cópia desabilitado porque copiar a instância quebra os
+    // mapas apontando para o grafo.
+    instance_t(const instance_t&) = delete;
+
+    instance_t(int nnodes);
 };
 
 /**
@@ -61,7 +65,7 @@ struct solution_t {
     std::vector<Graph::Edge> star_edges() const;
 
     /// Computa o custo da solução
-    uint64_t cost() const;
+    double cost() const;
 };
 
 }; // namespace network_design

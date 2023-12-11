@@ -15,6 +15,7 @@
 #include <tr1/unordered_map>
 #endif
 using namespace std;
+#include <iostream>
 
 mygraphlibdefaultparameters mygraphlibparameters;
 

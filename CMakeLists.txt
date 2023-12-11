@@ -46,12 +46,18 @@ add_library(network_design
     src/network_design/defs.cpp
     src/network_design/heuristics.cpp
     src/network_design/mip/polynomial.cpp
+    src/network_design/mip/branch_and_cut.cpp
     src/network_design/utils.cpp)
 
-add_executable(mo420-p1 src/p1.cpp)
 
-target_link_libraries(mo420-p1
+target_link_libraries(network_design PUBLIC
     mylib
-    network_design
     ${LEMON_LIBRARY}
-    ${GUROBI_CXX_LIBRARY} ${GUROBI_C_LIBRARY})
+    ${GUROBI_CXX_LIBRARY} ${GUROBI_C_LIBRARY}
+)
+
+add_executable(mo420-network-design-1 src/mo420-network-design-1.cpp)
+target_link_libraries(mo420-network-design-1 network_design)
+
+add_executable(mo420-network-design-2 src/mo420-network-design-2.cpp)
+target_link_libraries(mo420-network-design-2 network_design)

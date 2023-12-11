@@ -1,7 +1,6 @@
 // =============================================================
 #ifndef MYGRAPHLIB_DEFINE
 #define MYGRAPHLIB_DEFINE
-
 //#include<float.h>
 #include<cfloat>
 #include<climits>
@@ -43,9 +42,11 @@ class mygraphlibdefaultparameters {
   string inputgraphtable_posx; // "posx"
   string inputgraphtable_posy; // "posy"
   // Edge Table
-  string inputgraphtable_endpoint1; // "endpoint1", for the Graph type
-  string inputgraphtable_endpoint2; // "endpoint2", for the Graph type
+  string inputgraphtable_edgename; // "edgename"
+  string inputgraphtable_endpoint1; // "endpoint1"
+  string inputgraphtable_endpoint2; // "endpoint2"
   // Arc Table
+  string inputgraphtable_arcname; // "arcname"
   string inputgraphtable_tail; // "tail", for the Digraph type
   string inputgraphtable_head; // "head", for the Digraph type
 
@@ -60,15 +61,17 @@ inline mygraphlibdefaultparameters::mygraphlibdefaultparameters()
   inputgraphtable_nnodes =  "nnodes";
   inputgraphtable_nedges = "nedges"; // for the Graph type
   inputgraphtable_narcs = "narcs";   // for the Digraph type
-  inputgraphtable_type = "type";
+  inputgraphtable_type = "type"; // 
   // Node table
   inputgraphtable_nodename = "nodename";
   inputgraphtable_posx = "posx";
   inputgraphtable_posy = "posy";
   // Edge Table
+  inputgraphtable_edgename = "edgename"; // name of an edge (may be useful for multigraphs)
   inputgraphtable_endpoint1 = "endpoint1"; // for the Graph type
   inputgraphtable_endpoint2 = "endpoint2"; // for the Graph type
   // Arc Table
+  inputgraphtable_arcname = "arcname"; // name of an arc (may be useful for multidigraphs)
   inputgraphtable_tail = "tail"; // for the Digraph type
   inputgraphtable_head = "head"; // for the Digraph type
 }
@@ -145,11 +148,15 @@ typedef vector<Arc> LineToArcMap;
 #if __cplusplus >= 201103L
 #include <unordered_map>
 typedef std::unordered_map<string,Node> StringToNodeMap;
+typedef std::unordered_map<string,Edge> StringToEdgeMap;
 typedef std::unordered_map<string,DNode> StringToDNodeMap;
+typedef std::unordered_map<string,Arc> StringToArcMap;
 #else
 #include <tr1/unordered_map>
 typedef std::tr1::unordered_map<string,Node> StringToNodeMap;
 typedef std::tr1::unordered_map<string,DNode> StringToDNodeMap;
+typedef std::tr1::unordered_map<string,Edge> StringToEdgeMap;
+typedef std::tr1::unordered_map<string,Arc> StringToArcMap;
 #endif
 
 
@@ -162,7 +169,7 @@ inline double Product(Digraph &g,DNodeValueMap &a,DNodeValueMap &b)
 inline double Product(Digraph &g,ArcValueMap &a,ArcValueMap &b)
 { double s=0.0; for (ArcIt e(g);e!=INVALID;++e) s += a[e]*b[e]; return(s);}
 
-  
+/*  
 inline string GetGraphFileType(string filename){
   ifstream file;  file.open(filename.c_str());
   if (!file) {cout<<"Error: Could not open file "<<filename<<"."<<endl;exit(0);}
@@ -174,6 +181,7 @@ inline string GetGraphFileType(string filename){
   lowercase(type);
   file.close();
   return(type);}
+*/
 
 bool ReadDigraph(string filename, Digraph &g, DNodeStringMap& vname,
 		 DNodePosMap& posx, DNodePosMap& posy, ArcValueMap& weight);
@@ -182,6 +190,10 @@ bool ReadGraph(string filename, Graph &g, NodeStringMap& vname,
 bool ReadGraph(string filename, Graph &g, NodeStringMap& vname,
 	       NodePosMap& posx, NodePosMap& posy, NodeValueMap& weight);
 
+
+// Provavelmente vou trocar as rotinas abaixo por outras. Possivelmente fiquem
+// algumas relativas ao GraphTable que estao listadas acima.
+//==========================================================================
 // Fazer o TableToGraph e o GraphToTable
 // (e se for o caso, o DigraphToTable/TableToDigraph)
 //
@@ -244,6 +256,64 @@ bool GenerateTriangulatedGraph(Graph &g, // return with generated graph
 			  double SizeX, // coordinate x is a random number in [0,SizeX)
 			  double SizeY); // coordinate y is a random number in [0,SizeY)
 
+//==================================================================
+// With this class, from a graph (listgraph), we obtain an adjacency matrix,
+// say A, such that: given two nodes u and v, A.edge(u,v) return the edge that
+// connect u to v. In case there is no edge, it returns INVALID (same macro used
+// in the for loops to iterate on nodes and edges).
+class Adjacency {
+public:
+  Adjacency(Graph &graph);
+  Edge edge(Node u,Node v);
+  map<Node, map<Node, Edge> > edgemap;
+};
+
+inline Adjacency::Adjacency(Graph &graph)
+{
+  for (NodeIt u(graph); u!=INVALID; ++u) 
+    for (NodeIt v(graph); v!=INVALID; ++v) 
+      this->edgemap[u][v] = INVALID;
+
+  for (EdgeIt e(graph); e!=INVALID; ++e) {
+    Node u=graph.u(e),v=graph.v(e);
+    this->edgemap[u][v]=e;
+    this->edgemap[v][u]=e;
+  }
+}
+inline Edge Adjacency::edge(Node u,Node v)
+{ return( this->edgemap[u][v] ); }
+
+
+class ArcAdjacency {
+public:
+  ArcAdjacency(Digraph &digraph);
+  Arc arc(DNode u,DNode v);
+  map<DNode, map<DNode, Arc> > arcmap;
+};
+
+inline ArcAdjacency::ArcAdjacency(Digraph &digraph)
+{
+  for (DNodeIt u(digraph); u!=INVALID; ++u) 
+    for (DNodeIt v(digraph); v!=INVALID; ++v) {
+      this->arcmap[u][v] = INVALID;
+      this->arcmap[v][u] = INVALID;}
+
+  for (ArcIt a(digraph); a!=INVALID; ++a) {
+    DNode u=digraph.source(a),v=digraph.target(a);
+    this->arcmap[u][v]=a;
+  }
+}
+inline Arc ArcAdjacency::arc(DNode u,DNode v)
+{ return( this->arcmap[u][v] ); }
+
+
+
+//==================================================================
+// With the next class, and for a given graph, we can obtain another
+// adjacency matrix, but in this case, an adjacency matrix A stores the
+// value of the edge.
+// Verify if this routine can be removed and perhaps it is better to maintain
+// only the previous adjacency matrix structure.
 
 class AdjacencyMatrix {
 public:
@@ -324,7 +394,7 @@ inline bool IsInteger(Graph &g, EdgeValueMap &vx)
 // For Graph's, the file must have the following format,
 // divided in three parts:
 // #=========================================================
-//    nnodes        nnedges         type          info1  info2 info3 ...
+//    nnodes        nedges         type          info1  info2 info3 ...
 //  <num.nodes>  <num.edges>       graph           ... ... ...
 // #---------------------------------------------------------
 //  nodename nodeinfo1  nodeinfo2 ... ...
@@ -340,12 +410,15 @@ inline bool IsInteger(Graph &g, EdgeValueMap &vx)
 //
 
 // Required fields are:
-//      nnodes, nnedges, type
+//      nnodes, nedges, type
 //      nodename
 //      endpoint1 endpoint2
 // the other fields are optional. It depends on the informations you want to obtain.
 // For some problems, there is only the edge weight.
 // In other, there is node weight,...
+// Talvez seja melhor colocar um edgename/arcname e que isso seja um
+// identificador unico. Com isso, poderemos representar melhor multigrafos, e 
+// funcionaria de maneira similar ao vname, que eh um identificador unico para vertices.
 class GraphTable {
 public:
   GraphTable(string filename,Graph &graph);
@@ -380,10 +453,10 @@ inline GraphTable::GraphTable(string filename,Graph &graph):
 
   this->Header = new StringTable(1,file);
   if (!this->Header) {cout<<"Error: Memory allocation for Header problem.\n";exit(0);}
-  string type;
-  if (!this->Header->first("type",type)){
-    cout << "Error:  Could not find table type."<<endl;exit(0);}
-  lowercase(type);
+  // string type;
+  // if (!this->Header->first("type",type)){
+  //   cout << "Error:  Could not find table type."<<endl;exit(0);}
+  // lowercase(type);
 
   int nnodes; Header->first("nnodes",nnodes);
   int nedges; Header->first("nedges",nedges);
@@ -520,8 +593,8 @@ inline DigraphTable::DigraphTable(string filename,Digraph &graph):
   this->Header = new StringTable(1,file);
   if (!this->Header) {cout<<"Error: Memory allocation for Header problem.\n";exit(0);}
   string type;
-  Header->first("type",type);
-  lowercase(type);
+  //Header->first("type",type);
+  //lowercase(type);
   //if(type!="digraph"){
   //  cout<<"Error: The type of the input file is not \"digraph\".\n";
   //  file.close(); exit(0);}
