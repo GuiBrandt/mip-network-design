@@ -95,8 +95,7 @@ void formulation_t::add_star_arc_constraints() {
         model.addConstr(vars.star_arc[a] <= 1 - vars.circuit_node[t]);
     }
 
-    // Exatamente um arco de estrela entra num nó que não está no circuito, e
-    // exatamente um arco de volta de estrela sai.
+    // Exatamente um arco de estrela entra num nó que não está no circuito.
     for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
         GRBLinExpr in_degree_expr;
         for (Graph::InArcIt a(G, v); a != lemon::INVALID; ++a) {
@@ -147,7 +146,51 @@ void formulation_t::add_circuit_arc_constraints() {
     }
 }
 
-void formulation_t::find_violated_cuts() {
+void formulation_t::find_violated_integer_cuts() {
+    Graph::EdgeMap<double> capacity(G);
+    for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
+        Graph::Node u = G.u(e), v = G.v(e);
+        Graph::Arc a = G.arc(u, v), b = G.arc(v, u);
+        capacity[e] = getSolution(vars.circuit_arc[a]) +
+                      2 * getSolution(vars.star_arc[a]) +
+                      getSolution(vars.circuit_arc[b]) +
+                      2 * getSolution(vars.star_arc[b]);
+    }
+
+    Graph::NodeMap<int> aux_map(G);
+    lemon::UnionFind<Graph::NodeMap<int>> components(aux_map);
+    for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
+        components.insert(v);
+    }
+    for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
+        if (capacity[e] > 1 - 1e-4) {
+            components.join(G.u(e), G.v(e));
+        }
+    }
+
+    int num_components = 0;
+    std::vector<int> component_index(G.nodeNum(), -1);
+    for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
+        int component = components.find(v);
+        if (component_index[component] < 0) {
+            component_index[component] = num_components++;
+        }
+    }
+
+    for (int i = 0; i < num_components; i++) {
+        GRBLinExpr out_expr;
+        for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
+            if (component_index[components.find(G.source(a))] == i &&
+                component_index[components.find(G.target(a))] != i) {
+                out_expr += vars.circuit_arc[a] + vars.star_arc[a] +
+                            vars.star_arc[G.oppositeArc(a)];
+            }
+        }
+        addLazy(out_expr >= 1);
+    }
+}
+
+void formulation_t::find_violated_fractional_cuts() {
     Graph::EdgeMap<double> capacity(G);
     for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
         Graph::Node u = G.u(e), v = G.v(e);
@@ -314,12 +357,13 @@ void formulation_t::callback() {
     try {
         switch (where) {
         case GRB_CB_MIPSOL:
-            find_violated_cuts();
+            find_violated_fractional_cuts();
             break;
 
         case GRB_CB_MIPNODE:
             if (getIntInfo(GRB_CB_MIPNODE_STATUS) == GRB_OPTIMAL) {
                 // find_violated_blossom();
+                // find_violated_fractional_cuts();
             }
             break;
 

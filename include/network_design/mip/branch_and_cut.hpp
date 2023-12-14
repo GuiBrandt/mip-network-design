@@ -76,7 +76,12 @@ class formulation_t : public GRBCallback {
     /**
      * Adiciona restrições de corte violadas de forma preguiçosa.
      */
-    void find_violated_cuts();
+    void find_violated_integer_cuts();
+
+    /**
+     * Adiciona restrições de corte violadas de forma preguiçosa.
+     */
+    void find_violated_fractional_cuts();
 
     /**
      * Adiciona restrições blossom violadas de forma preguiçosa.
