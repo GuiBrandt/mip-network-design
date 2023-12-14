@@ -26,23 +26,15 @@ struct mip_vars_t {
     Graph::NodeMap<GRBVar> circuit_node;
 
     /**
-     * Fonte do circuito, utilizada para permitir entrada de um arco no circuito
-     * em um nó.
-     *
-     * `circuit_source[i]` = 1 se o nó `i` é a fonte do circuito, 0 caso
-     * contrário.
-     */
-    Graph::NodeMap<GRBVar> circuit_source;
-
-    /**
      * Ordem de um nó no circuito.
      *
      * Assume valores de 0 a N - 1, onde N é o número de partições usadas na
      * solução.
      *
-     * Para nós fora do circuito, o valor é irrelevante.
+     * Para nós fora do circuito, o valor é igual ao nó do circuito em cuja
+     * partição o nó está.
      */
-    Graph::NodeMap<GRBVar> circuit_order;
+    Graph::NodeMap<GRBVar> node_order;
 
     /**
      * Variáveis de incidência dos arcos (considerando a versão orientada do
@@ -94,10 +86,10 @@ class formulation_t {
     void add_circuit_arc_constraints();
 
     /**
-     * Adiciona restrições de ordem para os vértices no circuito. Garante que o
-     * circuito de fato forma um ciclo (e não um 2-fator qualquer).
+     * Adiciona restrições de ordem para os vértices. Garante que o grafo é
+     * conexo.
      */
-    void add_circuit_order_constraints();
+    void add_node_order_constraints();
 
   public:
     formulation_t(const instance_t&, const GRBEnv& env);

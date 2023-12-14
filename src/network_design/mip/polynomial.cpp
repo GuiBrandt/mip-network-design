@@ -7,8 +7,8 @@ namespace mip {
 namespace polynomial {
 
 mip_vars_t::mip_vars_t(GRBModel& model, const instance_t& data)
-    : circuit_node(data.graph), circuit_source(data.graph),
-      circuit_order(data.graph), circuit_arc(data.graph), star_arc(data.graph) {
+    : circuit_node(data.graph), node_order(data.graph), circuit_arc(data.graph),
+      star_arc(data.graph) {
     static char var_name[32];
 
     const auto& G = data.graph;
@@ -18,23 +18,13 @@ mip_vars_t::mip_vars_t(GRBModel& model, const instance_t& data)
     for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
         std::snprintf(var_name, sizeof(var_name), "circuit_node[%d]", G.id(i));
         circuit_node[i] = model.addVar(0.0, 1.0, 0.0, GRB_BINARY, var_name);
-        circuit_node[i].set(GRB_IntAttr_PoolIgnore, 1);
-    }
-
-    for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
-        std::snprintf(var_name, sizeof(var_name), "circuit_source[%d]",
-                      G.id(i));
-        circuit_source[i] = model.addVar(0.0, 1.0, 0.0, GRB_BINARY, var_name);
-        circuit_source[i].set(GRB_IntAttr_PoolIgnore, 1);
     }
 
     // Ordem dos nós no circuito
     for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
-        std::snprintf(var_name, sizeof(var_name), "circuit_order[%d]", G.id(i));
-        circuit_order[i] =
+        std::snprintf(var_name, sizeof(var_name), "node_order[%d]", G.id(i));
+        node_order[i] =
             model.addVar(0.0, N_PARTITIONS - 1, 0.0, GRB_CONTINUOUS, var_name);
-        // circuit_order[i].set(GRB_IntAttr_BranchPriority, -1000);
-        circuit_order[i].set(GRB_IntAttr_PoolIgnore, 1);
     }
 
     // Arcos no circuito
@@ -58,7 +48,6 @@ mip_vars_t::mip_vars_t(GRBModel& model, const instance_t& data)
         // Desabilita arestas sem peso definido
         bool usable = cost < 1e99;
         star_arc[a] = model.addVar(0.0, usable, cost, GRB_BINARY, var_name);
-        // star_arc[a].set(GRB_IntAttr_BranchPriority, -1000);
     }
 }
 
@@ -71,7 +60,7 @@ formulation_t::formulation_t(const instance_t& instance, const GRBEnv& env)
     add_partition_constraints();
     add_star_arc_constraints();
     add_circuit_arc_constraints();
-    add_circuit_order_constraints();
+    add_node_order_constraints();
 
     model.update();
     model.write("model.lp");
@@ -102,13 +91,6 @@ void formulation_t::add_partition_constraints() {
 }
 
 void formulation_t::add_star_arc_constraints() {
-    // Uma aresta de estrela sai de um nó do circuito para um nó fora do
-    // circuito.
-    for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
-        Graph::Node s = G.source(a), t = G.target(a);
-        model.addConstr(vars.star_arc[a] <= vars.circuit_node[s]);
-    }
-
     // Exatamente um arco de estrela entra num nó que não está no circuito.
     for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
         GRBLinExpr in_degree_expr;
@@ -156,47 +138,23 @@ void formulation_t::add_circuit_arc_constraints() {
     }
 }
 
-void formulation_t::add_circuit_order_constraints() {
-    // Fonte do circuito
-    GRBLinExpr source_expr;
-    for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
-        source_expr += vars.circuit_source[u];
-    }
-    std::snprintf(constr_name, sizeof(constr_name), "circuit_source");
-    model.addConstr(source_expr == 1);
-
-    for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
-        auto u = G.u(e), v = G.v(e);
-        if (G.id(u) < G.id(v)) {
-            std::swap(u, v);
-        }
-        model.addConstr(vars.circuit_source[u] >=
-                        vars.circuit_source[v] - (1 - vars.circuit_node[u]));
-    }
-
-    // Limite da ordem cíclica.
-    GRBLinExpr expr;
-    for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
-        expr += vars.circuit_node[u];
-    }
-    for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
-        std::snprintf(constr_name, sizeof(constr_name),
-                      "circuit_order_limit[%d]", G.id(i));
-        model.addConstr(vars.circuit_order[i] <= expr - 1);
-    }
-
+void formulation_t::add_node_order_constraints() {
     // Eliminação de subciclo: se uma aresta está no circuito, então um de
     // seus extremos vem antes do outro na ordem cíclica, exceto para o nó
     // na primeira partição.
+    Graph::Node v0 = G.nodeFromId(0);
     for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
         Graph::Node s = G.source(a), t = G.target(a);
+        if (t == v0) {
+            continue;
+        }
         std::snprintf(constr_name, sizeof(constr_name),
-                      "circuit_order_arc[%d][%d]", G.id(s), G.id(t));
-        model.addConstr(vars.circuit_order[t] >=
-                            vars.circuit_order[s] + 1 -
-                                N_PARTITIONS * (1 - vars.circuit_arc[a]) -
-                                N_PARTITIONS * vars.circuit_source[t],
-                        constr_name);
+                      "node_order_arc[%d][%d]", G.id(s), G.id(t));
+        model.addConstr(vars.node_order[t] >=
+                        vars.node_order[s] + 1 -
+                            N_PARTITIONS *
+                                (1 - vars.circuit_arc[a] +
+                                 vars.star_arc[G.arc(t, v0)]));
     }
 }
 
