@@ -19,33 +19,20 @@ struct mip_vars_t {
     using NodePartitionVars = Graph::NodeMap<std::vector<GRBVar>>;
 
     /**
-     * Variáveis de incidência das partições.
-     *
-     * `partition[i][j]` = 1 se o nó `i` está na partição `j`, 0 caso contrário.
-     */
-    NodePartitionVars partition;
-
-    /**
-     * Variáveis indicadoras de uso das partições.
-     *
-     * `partition_used[j]` = 1 se a partição `j` tem algum nó, 0 caso contrário.
-     */
-    std::vector<GRBVar> partition_used;
-
-    /**
-     * Variáveis de incidência dos nós do circuito.
-     *
-     * `circuit_node[i][j]` = 1 se o nó `i` está no circuito e na partição `j`,
-     *                        0 caso contrário.
-     */
-    NodePartitionVars circuit_partition_node;
-
-    /**
      * Variáveis de incidência dos nós do circuito.
      *
      * `circuit_node[i]` = 1 se o nó `i` está no circuito, 0 caso contrário.
      */
     Graph::NodeMap<GRBVar> circuit_node;
+
+    /**
+     * Fonte do circuito, utilizada para permitir entrada de um arco no circuito
+     * em um nó.
+     *
+     * `circuit_source[i]` = 1 se o nó `i` é a fonte do circuito, 0 caso
+     * contrário.
+     */
+    Graph::NodeMap<GRBVar> circuit_source;
 
     /**
      * Ordem de um nó no circuito.
@@ -66,12 +53,12 @@ struct mip_vars_t {
     Graph::ArcMap<GRBVar> circuit_arc;
 
     /**
-     * Variáveis de incidência das arestas das estrelas.
+     * Variáveis de incidência dos arcos das estrelas.
      *
-     * `star_edge[e]` = 1 se a aresta `e` está em alguma estrela, 0 caso
+     * `star_arc[a]` = 1 se o arco `a` está em alguma estrela, 0 caso
      *                  contrário.
      */
-    Graph::EdgeMap<GRBVar> star_edge;
+    Graph::ArcMap<GRBVar> star_arc;
 
     mip_vars_t(GRBModel&, const instance_t&);
 };
@@ -89,21 +76,9 @@ class formulation_t {
     const int N_PARTITIONS;
 
     /**
-     * Adiciona restrições forçando os valores das variáveis de uso das
-     * partições.
-     */
-    void add_used_partition_constraints();
-
-    /**
-     * Adiciona restrições forçando as partições de menor índice a serem usadas
-     * para evitar simetrias.
-     */
-    void add_partition_symmetry_breaking_constraints();
-
-    /**
      * Adiciona restrições de empacotamento dos vértices nas partições.
      */
-    void add_partition_packing_constraints();
+    void add_partition_constraints();
 
     /**
      * Adiciona restrições de arestas de estrela.
@@ -111,12 +86,7 @@ class formulation_t {
      * Uma aresta deve estar em uma estrela se ambos seus extremos estão na
      * mesma partição e um deles está no circuito.
      */
-    void add_star_edge_constraints();
-
-    /**
-     * Adiciona restrições para vértices serem escolhidos no circuito.
-     */
-    void add_circuit_node_constraints();
+    void add_star_arc_constraints();
 
     /**
      * Adiciona restrições para arcos no circuito.
@@ -128,11 +98,6 @@ class formulation_t {
      * circuito de fato forma um ciclo (e não um 2-fator qualquer).
      */
     void add_circuit_order_constraints();
-
-    /**
-     * Adiciona restrições de quebra de simetria para os vértices no circuito.
-     */
-    void add_circuit_symmetry_breaking_constraints();
 
   public:
     formulation_t(const instance_t&, const GRBEnv& env);
