@@ -32,7 +32,7 @@ mip_vars_t::mip_vars_t(GRBModel& model, const instance_t& data)
     for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
         std::snprintf(var_name, sizeof(var_name), "circuit_order[%d]", G.id(i));
         circuit_order[i] =
-            model.addVar(0.0, N_PARTITIONS - 1, 0.0, GRB_INTEGER, var_name);
+            model.addVar(0.0, N_PARTITIONS - 1, 0.0, GRB_CONTINUOUS, var_name);
         // circuit_order[i].set(GRB_IntAttr_BranchPriority, -1000);
         circuit_order[i].set(GRB_IntAttr_PoolIgnore, 1);
     }
@@ -82,13 +82,15 @@ static char constr_name[64];
 void formulation_t::add_partition_constraints() {
     // Limite de capacidade.
     for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
-        GRBLinExpr expr = instance.node_weight[u];
+        GRBLinExpr expr;
         for (Graph::OutArcIt a(G, u); a != lemon::INVALID; ++a) {
             expr += instance.node_weight[G.target(a)] * vars.star_arc[a];
         }
         std::snprintf(constr_name, sizeof(constr_name),
                       "partition_capacity[%d]", G.id(u));
-        model.addConstr(expr <= instance.capacity, constr_name);
+        model.addConstr(expr <= (instance.capacity - instance.node_weight[u]) *
+                                    vars.circuit_node[u],
+                        constr_name);
     }
 
     // Pelo menos 3 partes são usadas.
@@ -105,7 +107,6 @@ void formulation_t::add_star_arc_constraints() {
     for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
         Graph::Node s = G.source(a), t = G.target(a);
         model.addConstr(vars.star_arc[a] <= vars.circuit_node[s]);
-        model.addConstr(vars.star_arc[a] <= 1 - vars.circuit_node[t]);
     }
 
     // Exatamente um arco de estrela entra num nó que não está no circuito.
@@ -163,10 +164,6 @@ void formulation_t::add_circuit_order_constraints() {
     }
     std::snprintf(constr_name, sizeof(constr_name), "circuit_source");
     model.addConstr(source_expr == 1);
-
-    for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
-        model.addConstr(vars.circuit_source[u] <= vars.circuit_node[u]);
-    }
 
     for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
         auto u = G.u(e), v = G.v(e);

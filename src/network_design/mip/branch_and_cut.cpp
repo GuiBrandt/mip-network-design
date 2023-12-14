@@ -177,8 +177,12 @@ void formulation_t::find_violated_integer_cuts() {
         }
     }
 
+    if (num_components == 1) {
+        return;
+    }
+
     for (int i = 0; i < num_components; i++) {
-        GRBLinExpr out_expr;
+        GRBLinExpr out_expr, in_expr;
         for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
             if (component_index[components.find(G.source(a))] == i &&
                 component_index[components.find(G.target(a))] != i) {
@@ -195,10 +199,10 @@ void formulation_t::find_violated_fractional_cuts() {
     for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
         Graph::Node u = G.u(e), v = G.v(e);
         Graph::Arc a = G.arc(u, v), b = G.arc(v, u);
-        capacity[e] = getSolution(vars.circuit_arc[a]) +
-                      2 * getSolution(vars.star_arc[a]) +
-                      getSolution(vars.circuit_arc[b]) +
-                      2 * getSolution(vars.star_arc[b]);
+        capacity[e] = getNodeRel(vars.circuit_arc[a]) +
+                      2 * getNodeRel(vars.star_arc[a]) +
+                      getNodeRel(vars.circuit_arc[b]) +
+                      2 * getNodeRel(vars.star_arc[b]);
     }
 
     std::vector<Graph::Edge> frac_edges, one_edges;
@@ -249,11 +253,8 @@ void formulation_t::find_violated_fractional_cuts() {
     lemon::GomoryHu<LGraph, LGraph::EdgeMap<double>> gomory_hu(H, H_capacity);
     gomory_hu.run();
 
-    // Controla o número de cortes dependendo da profundidade da busca.
-    int n = 0, n_max = (size_t)getDoubleInfo(GRB_CB_MIPSOL_NODCNT) / 2;
-
     LGraph::NodeMap<bool> cutmap(H, false);
-    for (LGraph::NodeIt u(H); u != lemon::INVALID && n <= n_max; ++u) {
+    for (LGraph::NodeIt u(H); u != lemon::INVALID; ++u) {
         if (gomory_hu.predNode(u) == lemon::INVALID ||
             gomory_hu.predValue(u) > 2.0 - 1e-5) {
             continue;
@@ -272,8 +273,7 @@ void formulation_t::find_violated_fractional_cuts() {
             }
         }
 
-        addLazy(out_expr >= 1);
-        n++;
+        addCut(out_expr >= 1);
     }
 }
 
@@ -357,13 +357,13 @@ void formulation_t::callback() {
     try {
         switch (where) {
         case GRB_CB_MIPSOL:
-            find_violated_fractional_cuts();
+            find_violated_integer_cuts();
             break;
 
         case GRB_CB_MIPNODE:
             if (getIntInfo(GRB_CB_MIPNODE_STATUS) == GRB_OPTIMAL) {
                 // find_violated_blossom();
-                // find_violated_fractional_cuts();
+                find_violated_fractional_cuts();
             }
             break;
 
