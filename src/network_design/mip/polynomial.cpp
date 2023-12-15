@@ -35,6 +35,8 @@ void formulation_t::add_circuit_order_constraints() {
     // Eliminação de subciclo: se uma aresta está no circuito, então um de
     // seus extremos vem antes do outro na ordem cíclica, exceto para o nó
     // v0 ou o nó que atende v0.
+    // Versão fortalecida da restrição Miller-Tucker-Zemlin, por Desrochers &
+    // Laporte (1991).
     for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
         auto s = G.source(a), t = G.target(a);
         if (t == v0) {
@@ -42,10 +44,12 @@ void formulation_t::add_circuit_order_constraints() {
         }
         std::snprintf(constr_name, sizeof(constr_name),
                       "node_order_arc[%d][%d]", G.id(s), G.id(t));
-        model.addConstr(vars.node_order[t] >=
-                        vars.node_order[s] + 1 -
-                            G.nodeNum() * (1 - vars.circuit_arc[a] +
-                                           vars.star_arc[G.arc(t, v0)]));
+        model.addConstr(vars.node_order[s] - vars.node_order[t] +
+                            G.nodeNum() * vars.circuit_arc[a] +
+                            G.nodeNum() * vars.star_arc[G.arc(t, v0)] +
+                            (G.nodeNum() - 2) *
+                                vars.circuit_arc[G.oppositeArc(a)] <=
+                        G.nodeNum() - 1);
     }
 }
 
