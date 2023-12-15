@@ -45,10 +45,10 @@ add_library(mylib
 add_library(network_design
     src/network_design/defs.cpp
     src/network_design/heuristics.cpp
+    src/network_design/mip/base.cpp
     src/network_design/mip/polynomial.cpp
     src/network_design/mip/branch_and_cut.cpp
     src/network_design/utils.cpp)
-
 
 target_link_libraries(network_design PUBLIC
     mylib

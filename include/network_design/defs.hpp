@@ -46,17 +46,12 @@ struct solution_t {
     /// Partição dos nós do grafo.
     Graph::NodeMap<int> partition;
 
-    /// Vetor de representantes das partições (na ordem numérica das partições)
-    std::vector<Graph::Node> partition_repr;
-
     /// Nós do circuito, em ordem.
     std::vector<Graph::Node> circuit_nodes;
 
     solution_t() = delete;
     solution_t(const instance_t&);
-
     solution_t(const solution_t& other);
-    solution_t(const solution_t&& other);
 
     /// Gera as arestas do circuito na solução.
     std::vector<Graph::Edge> circuit_edges() const;

@@ -11,18 +11,8 @@ solution_t::solution_t(const instance_t& data)
     : instance(data), partition(instance.graph) {}
 
 solution_t::solution_t(const solution_t& other)
-    : instance(other.instance), partition_repr(other.partition_repr),
-      partition(instance.graph), circuit_nodes(other.circuit_nodes) {
-    // As classes de `Map` do Lemon não implementam construtor de cópia, então
-    // é necessário fazer a cópia manualmente.
-    for (Graph::NodeIt i(instance.graph); i != lemon::INVALID; ++i) {
-        partition[i] = other.partition[i];
-    }
-}
-
-solution_t::solution_t(const solution_t&& other)
-    : instance(other.instance), partition_repr(std::move(other.partition_repr)),
-      partition(instance.graph), circuit_nodes(std::move(other.circuit_nodes)) {
+    : instance(other.instance), partition(instance.graph),
+      circuit_nodes(other.circuit_nodes) {
     // As classes de `Map` do Lemon não implementam construtor de cópia, então
     // é necessário fazer a cópia manualmente.
     for (Graph::NodeIt i(instance.graph); i != lemon::INVALID; ++i) {
@@ -45,7 +35,7 @@ std::vector<Graph::Edge> solution_t::star_edges() const {
     std::vector<Graph::Edge> result;
     result.reserve(lemon::countNodes(instance.graph) - circuit_nodes.size());
     for (Graph::NodeIt u(instance.graph); u != lemon::INVALID; ++u) {
-        const auto& v = partition_repr[partition[u]];
+        const auto& v = circuit_nodes[partition[u]];
         if (u != v) {
             result.push_back(instance.graph.edge(u, v));
         }

@@ -10,143 +10,17 @@ namespace network_design {
 namespace mip {
 namespace branch_and_cut {
 
-static char var_name[32];
-
-mip_vars_t::mip_vars_t(GRBModel& model, const instance_t& data)
-    : circuit_node(data.graph), circuit_arc(data.graph), star_arc(data.graph) {
-
-    const auto& G = data.graph;
-    const int N_PARTITIONS = G.nodeNum();
-
-    // Nós no circuito
-    for (Graph::NodeIt i(G); i != lemon::INVALID; ++i) {
-        std::snprintf(var_name, sizeof(var_name), "circuit_node[%d]", G.id(i));
-        circuit_node[i] = model.addVar(0.0, 1.0, 0.0, GRB_BINARY, var_name);
-        circuit_node[i].set(GRB_IntAttr_PoolIgnore, 1);
-    }
-
-    // Arcos no circuito
-    for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
-        std::snprintf(var_name, sizeof(var_name), "circuit_arc[%d,%d]",
-                      G.id(G.source(a)), G.id(G.target(a)));
-        double cost = data.circuit_cost_factor * data.edge_cost[a];
-
-        // Desabilita arestas sem peso definido
-        bool usable = cost < 1e99;
-        circuit_arc[a] = model.addVar(0.0, usable, cost, GRB_BINARY, var_name);
-    }
-
-    // Arcos nas estrelas
-    for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
-        std::snprintf(var_name, sizeof(var_name), "star_arc[%d,%d]",
-                      G.id(G.source(a)), G.id(G.target(a)));
-        double cost = data.edge_cost[a];
-
-        // Desabilita arestas sem peso definido
-        bool usable = cost < 1e99;
-        star_arc[a] = model.addVar(0.0, usable, cost, GRB_BINARY, var_name);
-    }
-}
-
 formulation_t::formulation_t(const instance_t& instance, const GRBEnv& env)
-    : instance(instance), model(env), vars(model, instance), G(instance.graph),
-      N_PARTITIONS(G.nodeNum()) {
-    model.set(GRB_StringAttr_ModelName, "Um Problema de Network Design");
-    model.set(GRB_IntAttr_ModelSense, GRB_MINIMIZE);
+    : formulation_base(instance, env) {
     model.set(GRB_IntParam_LazyConstraints, 1);
     model.setCallback(this);
-
-    add_partition_constraints();
-    add_star_arc_constraints();
-    add_circuit_arc_constraints();
-
-    model.update();
-    model.write("model.lp");
 }
 
 static char constr_name[64];
 
-void formulation_t::add_partition_constraints() {
-    // Limite de capacidade.
-    for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
-        GRBLinExpr expr = instance.node_weight[u];
-        for (Graph::OutArcIt a(G, u); a != lemon::INVALID; ++a) {
-            expr += instance.node_weight[G.target(a)] * vars.star_arc[a];
-        }
-        std::snprintf(constr_name, sizeof(constr_name),
-                      "Partition %d - Capacity limit", G.id(u));
-        model.addConstr(expr <= instance.capacity, constr_name);
-    }
-
-    // Pelo menos 3 partes são usadas.
-    GRBLinExpr expr;
-    for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
-        expr += vars.circuit_node[u];
-    }
-    model.addConstr(expr >= 3, "At least 3 parts");
-}
-
-void formulation_t::add_star_arc_constraints() {
-    // Uma aresta de estrela sai de um nó do circuito para um nó fora do
-    // circuito.
-    for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
-        Graph::Node s = G.source(a), t = G.target(a);
-        model.addConstr(vars.star_arc[a] <= vars.circuit_node[s]);
-        model.addConstr(vars.star_arc[a] <= 1 - vars.circuit_node[t]);
-    }
-
-    // Exatamente um arco de estrela entra num nó que não está no circuito.
-    for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
-        GRBLinExpr in_degree_expr;
-        for (Graph::InArcIt a(G, v); a != lemon::INVALID; ++a) {
-            in_degree_expr += vars.star_arc[a];
-        }
-        std::snprintf(constr_name, sizeof(constr_name),
-                      "Star node %d In-Degree 1", G.id(v));
-        model.addConstr(in_degree_expr == 1 - vars.circuit_node[v],
-                        constr_name);
-    }
-}
-
-void formulation_t::add_circuit_arc_constraints() {
-    // Um arco é usado no máximo uma vez, em alguma das categorias de arco.
-    for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
-        Graph::Arc a = G.arc(G.u(e), G.v(e));
-        model.addConstr(vars.star_arc[a] + vars.star_arc[G.oppositeArc(a)] +
-                            vars.circuit_arc[a] +
-                            vars.circuit_arc[G.oppositeArc(a)] <=
-                        1);
-    }
-
-    // Uma aresta só pode estar no circuito se ambos seus extremos estão no
-    // circuito.
-    for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
-        Graph::Node s = G.source(a), t = G.target(a);
-        model.addConstr(vars.circuit_arc[a] <= vars.circuit_node[s]);
-        model.addConstr(vars.circuit_arc[a] <= vars.circuit_node[t]);
-    }
-
-    // Todo vértice no circuito deve ter grau de entrada e saída 1.
-    for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
-        GRBLinExpr in_degree_expr;
-        for (Graph::InArcIt a(G, u); a != lemon::INVALID; ++a) {
-            in_degree_expr += vars.circuit_arc[a];
-        }
-        std::snprintf(constr_name, sizeof(constr_name),
-                      "Circuit node %d - In-Degree 1", G.id(u));
-        model.addConstr(in_degree_expr == vars.circuit_node[u], constr_name);
-
-        GRBLinExpr out_degree_expr;
-        for (Graph::OutArcIt a(G, u); a != lemon::INVALID; ++a) {
-            out_degree_expr += vars.circuit_arc[a];
-        }
-        std::snprintf(constr_name, sizeof(constr_name),
-                      "Circuit node %d - Out-Degree 1", G.id(u));
-        model.addConstr(out_degree_expr == vars.circuit_node[u], constr_name);
-    }
-}
-
 void formulation_t::find_violated_integer_cuts() {
+    const auto& G = instance.graph;
+
     Graph::EdgeMap<double> capacity(G);
     for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
         Graph::Node u = G.u(e), v = G.v(e);
@@ -195,14 +69,15 @@ void formulation_t::find_violated_integer_cuts() {
 }
 
 void formulation_t::find_violated_fractional_cuts() {
+    const auto& G = instance.graph;
+
     Graph::EdgeMap<double> capacity(G);
     for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
         Graph::Node u = G.u(e), v = G.v(e);
         Graph::Arc a = G.arc(u, v), b = G.arc(v, u);
-        capacity[e] = getNodeRel(vars.circuit_arc[a]) +
-                      2 * getNodeRel(vars.star_arc[a]) +
-                      getNodeRel(vars.circuit_arc[b]) +
-                      2 * getNodeRel(vars.star_arc[b]);
+        capacity[e] =
+            getNodeRel(vars.circuit_arc[a]) + 2 * getNodeRel(vars.star_arc[a]) +
+            getNodeRel(vars.circuit_arc[b]) + 2 * getNodeRel(vars.star_arc[b]);
     }
 
     std::vector<Graph::Edge> frac_edges, one_edges;
@@ -278,6 +153,8 @@ void formulation_t::find_violated_fractional_cuts() {
 }
 
 void formulation_t::find_violated_blossom() {
+    const auto& G = instance.graph;
+
     Graph::EdgeMap<double> capacity(G);
     for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
         Graph::Node u = G.u(e), v = G.v(e);
@@ -374,95 +251,6 @@ void formulation_t::callback() {
         std::cerr << "ERROR: " << ex.getMessage() << " (" << ex.getErrorCode()
                   << ")" << std::endl;
     }
-}
-
-solution_t build_solution(const instance_t& data, const mip_vars_t& vars) {
-    solution_t solution(data);
-
-    const auto& G = data.graph;
-
-    std::cout << "digraph D {" << std::endl;
-    for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
-        Graph::Node s = G.source(a), t = G.target(a);
-        if (vars.star_arc[a].get(GRB_DoubleAttr_X) >= 0.5) {
-            std::cout << "\t" << G.id(s) << " -> " << G.id(t)
-                      << " [color=blue, label=" << data.edge_cost[a] << "];"
-                      << std::endl;
-            std::cout << "\t" << G.id(t) << " -> " << G.id(s)
-                      << " [color=blue, style=dashed];" << std::endl;
-        }
-    }
-    for (Graph::ArcIt a(G); a != lemon::INVALID; ++a) {
-        Graph::Node s = G.source(a), t = G.target(a);
-        if (vars.circuit_arc[a].get(GRB_DoubleAttr_X) >= 0.5) {
-            std::cout << "\t" << G.id(s) << " -> " << G.id(t)
-                      << " [color=red, label="
-                      << data.circuit_cost_factor * data.edge_cost[a] << "];"
-                      << std::endl;
-        }
-    }
-    std::cout << "}" << std::endl;
-
-    // Partições
-    std::vector<int> partition_map(G.nodeNum());
-    for (int j = 0; j < G.nodeNum(); j++) {
-        partition_map[j] = j;
-    }
-
-    int max_part = -1;
-    for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
-        if (vars.circuit_node[v].get(GRB_DoubleAttr_X) >= 0.5) {
-            partition_map[G.id(v)] = solution.partition[v] = ++max_part;
-        }
-    }
-
-    for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
-        for (Graph::InArcIt a(G, u); a != lemon::INVALID; ++a) {
-            if (vars.star_arc[a].get(GRB_DoubleAttr_X) >= 0.5) {
-                solution.partition[u] = partition_map[G.id(G.source(a))];
-                break;
-            }
-        }
-    }
-
-    // Nós do circuito de acordo com a ordem do circuito
-    Graph::Node current, prev;
-    for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
-        if (vars.circuit_node[v].get(GRB_DoubleAttr_X) >= 0.5) {
-            current = v;
-            break;
-        }
-    }
-
-    solution.circuit_nodes.reserve(max_part + 1);
-    do {
-        solution.circuit_nodes.push_back(current);
-        for (Graph::OutArcIt a(G, current); a != lemon::INVALID; ++a) {
-            auto target = G.target(a);
-            if (target != prev &&
-                vars.circuit_arc[a].get(GRB_DoubleAttr_X) >= 0.5) {
-                prev = current;
-                current = target;
-                break;
-            }
-        }
-    } while (current != solution.circuit_nodes[0]);
-
-    assert(solution.circuit_nodes.size() == max_part + 1);
-
-    // Índice reverso para a ordem das partições no circuito
-    solution.partition_repr.resize(max_part + 1);
-    for (auto v : solution.circuit_nodes) {
-        solution.partition_repr[solution.partition[v]] = v;
-    }
-
-    return solution;
-}
-
-solution_t formulation_t::solve() {
-    model.optimize();
-    model.write("model.sol");
-    return build_solution(instance, vars);
 }
 
 } // namespace branch_and_cut

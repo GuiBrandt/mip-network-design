@@ -75,7 +75,6 @@ solution_t greedy_heuristic(const instance_t& data) {
         }
 
         solution.partition[best_center] = ++part;
-        solution.partition_repr.push_back(best_center);
         solution.circuit_nodes.push_back(best_center);
         for (auto v : best_star) {
             node_pool.erase(v);
