@@ -1,13 +1,20 @@
 #include "network_design/utils.hpp"
+#include "network_design/config.hpp"
 
 #include <mylib/mygraphlib.h>
 
 namespace network_design {
 
-void view(const solution_t& solution) {
+void view(const solution_t& solution, const std::string& instance_name) {
     const auto& G = solution.instance.graph;
 
-    std::ofstream out("solution.dot");
+    system("mkdir -p figures");
+
+    auto dot_file = "figures/" + instance_name + ".dot",
+         pdf_file = "figures/" + instance_name + ".pdf";
+
+    std::ofstream out;
+    out.open(dot_file);
     out << "digraph {" << std::endl;
     for (auto a : solution.circuit_arcs()) {
         out << "\t" << G.id(G.source(a)) << " -> " << G.id(G.target(a))
@@ -20,8 +27,8 @@ void view(const solution_t& solution) {
     out << "}" << std::endl;
     out.close();
 
-    system("circo -q -Tpdf solution.dot -o solution.pdf");
-    system("okular solution.pdf");
+    system(("circo -q -Tpdf " + dot_file + " -o " + pdf_file).c_str());
+    system((PDF_VIEWER " " + pdf_file).c_str());
 }
 
 std::unique_ptr<instance_t> random_instance(int nnodes, int seed) {
@@ -53,7 +60,7 @@ std::unique_ptr<instance_t> random_instance(int nnodes, int seed) {
     return instance;
 }
 
-std::unique_ptr<instance_t> read_instance(std::string filename) {
+std::unique_ptr<instance_t> read_instance(const std::string& filename) {
     using LGraph = lemon::ListGraph;
 
     LGraph H;

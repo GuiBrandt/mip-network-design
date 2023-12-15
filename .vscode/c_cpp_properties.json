@@ -5,6 +5,7 @@
             "includePath": [
                 "${workspaceFolder}/include",
                 "${workspaceFolder}/include/mylib",
+                "${workspaceFolder}/build/include",
                 "/opt/gurobi1003/linux64/include",
                 "${workspaceFolder}/lemon/lemon-1.3.1/include"
             ],

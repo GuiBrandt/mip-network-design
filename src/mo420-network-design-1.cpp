@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iostream>
 
 #include <mylib/myutils.h>
@@ -26,7 +27,10 @@ int main(int argc, char* argv[]) {
         std::exit(1);
     }
 
-    auto instance = network_design::read_instance(argv[1]);
+    auto instance_file = std::string(argv[1]);
+    auto instance_name =
+        instance_file.substr(instance_file.find_last_of("/\\") + 1);
+    auto instance = network_design::read_instance(instance_file);
 
     std::random_device rd;
     int seed = rd();
@@ -35,17 +39,35 @@ int main(int argc, char* argv[]) {
     std::minstd_rand rng(seed);
     std::uniform_int_distribution<int> grb_seed_dist(0, GRB_MAXINT);
 
+    auto start_time = std::chrono::steady_clock::now();
+
     auto greedy_solution = network_design::greedy_heuristic(*instance);
     auto cutoff = greedy_solution.cost();
     std::cout << "Heuristic cost: " << cutoff << std::endl;
+    std::cout << "Heuristic time: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - start_time)
+                     .count()
+              << "ms" << std::endl;
 
     GRBEnv env;
     env.set(GRB_IntParam_Seed, grb_seed_dist(rng));
     env.set(GRB_DoubleParam_Cutoff, cutoff);
+
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start_time);
+    env.set(GRB_DoubleParam_TimeLimit, 3600 - elapsed.count() / 1000.0);
+
     formulation_t formulation(*instance, env);
 
     auto solution = formulation.solve();
-    network_design::view(solution);
+    // network_design::view(solution, instance_name);
+
+    std::cout << "Total time: "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - start_time)
+                     .count()
+              << "ms" << std::endl;
 
     return 0;
 }

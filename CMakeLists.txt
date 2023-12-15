@@ -7,6 +7,10 @@ include(ExternalProject)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if (NOT DEFINED PDF_VIEWER)
+    set(PDF_VIEWER "open")
+endif()
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release")
 endif()
@@ -33,7 +37,17 @@ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 find_package(GUROBI REQUIRED)
 find_package(LEMON REQUIRED)
 
-include_directories(${GUROBI_INCLUDE_DIRS} ${LEMON_INCLUDE_DIRS} include include/mylib)
+configure_file(
+    include/network_design/config.hpp.in
+    include/network_design/config.hpp
+    @ONLY)
+
+include_directories(
+    ${GUROBI_INCLUDE_DIRS}
+    ${LEMON_INCLUDE_DIRS}
+    include
+    include/mylib
+    ${CMAKE_CURRENT_BINARY_DIR}/include)
 
 add_library(mylib
     src/mylib/myutils.cpp

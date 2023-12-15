@@ -8,11 +8,11 @@
 
 namespace network_design {
 
-void view(const solution_t&);
+void view(const solution_t&, const std::string& instance_name);
 
 std::unique_ptr<instance_t> random_instance(int nnodes, int seed);
 
-std::unique_ptr<instance_t> read_instance(std::string filename);
+std::unique_ptr<instance_t> read_instance(const std::string& filename);
 
 }; // namespace network_design
 
