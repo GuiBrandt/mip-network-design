@@ -20,24 +20,24 @@ solution_t::solution_t(const solution_t& other)
     }
 }
 
-std::vector<Graph::Edge> solution_t::circuit_edges() const {
+std::vector<Graph::Arc> solution_t::circuit_arcs() const {
     const size_t N = circuit_nodes.size();
-    std::vector<Graph::Edge> result;
+    std::vector<Graph::Arc> result;
     result.reserve(N);
     for (int i = 0; i < N; i++) {
         result.push_back(
-            instance.graph.edge(circuit_nodes[i], circuit_nodes[(i + 1) % N]));
+            instance.graph.arc(circuit_nodes[i], circuit_nodes[(i + 1) % N]));
     }
     return result;
 }
 
-std::vector<Graph::Edge> solution_t::star_edges() const {
-    std::vector<Graph::Edge> result;
+std::vector<Graph::Arc> solution_t::star_arcs() const {
+    std::vector<Graph::Arc> result;
     result.reserve(lemon::countNodes(instance.graph) - circuit_nodes.size());
     for (Graph::NodeIt u(instance.graph); u != lemon::INVALID; ++u) {
         const auto& v = circuit_nodes[partition[u]];
         if (u != v) {
-            result.push_back(instance.graph.edge(u, v));
+            result.push_back(instance.graph.arc(v, u));
         }
     }
     return result;
@@ -45,11 +45,11 @@ std::vector<Graph::Edge> solution_t::star_edges() const {
 
 double solution_t::cost() const {
     double value = 0;
-    for (const auto& e : circuit_edges()) {
-        value += instance.circuit_cost_factor * instance.edge_cost[e];
+    for (const auto& a : circuit_arcs()) {
+        value += instance.circuit_cost_factor * instance.edge_cost[a];
     }
-    for (const auto& e : star_edges()) {
-        value += instance.edge_cost[e];
+    for (const auto& a : star_arcs()) {
+        value += instance.edge_cost[a];
     }
     return value;
 }

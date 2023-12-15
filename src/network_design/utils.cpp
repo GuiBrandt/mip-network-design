@@ -8,13 +8,13 @@ void view(const solution_t& solution) {
     const auto& G = solution.instance.graph;
 
     std::ofstream out("solution.dot");
-    out << "graph {" << std::endl;
-    for (auto e : solution.circuit_edges()) {
-        out << "\t" << G.id(G.u(e)) << " -- " << G.id(G.v(e))
+    out << "digraph {" << std::endl;
+    for (auto a : solution.circuit_arcs()) {
+        out << "\t" << G.id(G.source(a)) << " -> " << G.id(G.target(a))
             << " [ color=red ];" << std::endl;
     }
-    for (auto e : solution.star_edges()) {
-        out << "\t" << G.id(G.u(e)) << " -- " << G.id(G.v(e))
+    for (auto a : solution.star_arcs()) {
+        out << "\t" << G.id(G.source(a)) << " -> " << G.id(G.target(a))
             << " [ color=blue ];" << std::endl;
     }
     out << "}" << std::endl;

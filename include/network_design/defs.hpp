@@ -53,11 +53,11 @@ struct solution_t {
     solution_t(const instance_t&);
     solution_t(const solution_t& other);
 
-    /// Gera as arestas do circuito na solução.
-    std::vector<Graph::Edge> circuit_edges() const;
+    /// Gera os arcos do circuito na solução.
+    std::vector<Graph::Arc> circuit_arcs() const;
 
-    /// Gera as arestas das estrelas na solução.
-    std::vector<Graph::Edge> star_edges() const;
+    /// Gera os arcos das estrelas na solução.
+    std::vector<Graph::Arc> star_arcs() const;
 
     /// Computa o custo da solução
     double cost() const;
