@@ -1,0 +1,166 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage[brazilian]{babel}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathrsfs}
+\usepackage{hyperref}
+\usepackage{multirow}
+
+% \usepackage[ruled,portuguese]{algorithm2e}
+
+\title{PLI - Relatório 1: Formulação compacta}
+\author{Guilherme Guidotti Brandt (235970)}
+\date{}
+
+\newtheorem*{prop}{Proposição}
+\newtheorem*{cor}{Corolário}
+
+\begin{document}
+
+\maketitle
+
+\section{Formulação}
+
+Considerando a versão direcionada do grafo (adicionando um arco em cada sentido para cada aresta no grafo original), utilizei a seguinte formulação do problema:
+\begin{align}
+    (\mathcal{P})\quad
+    &\min \sum_{(u, v) \in A} \gamma c_{uv} x_{uv} + \sum_{(u, v) \in A} c_{uv} y_{uv}\nonumber\\
+    &\sum_{v \in V} r_{v} \geq 3                            \label{min-partitions}\\
+    &\sum_{v \in \delta^-(u)} y_{vu} = 1 - r_u              &\forall u \in V\label{star-in-degree}\\
+    &\sum_{v \in \delta^+(u)} d_v y_{uv} \leq r_u (B - d_u) &\forall u \in V\label{partition-packing}\\
+    &\sum_{v \in \delta^+(u)} x_{uv} = r_u                  &\forall u \in V\label{circuit-out-degree}\\
+    &\sum_{v \in \delta^-(u)} x_{vu} = r_u                  &\forall u \in V\label{circuit-in-degree}\\
+    &t_u - t_v + |V|(x_{uv} - y_{vv_0}) \leq |V| - 1&\forall (u, v) \in A, v \neq v_0\label{circuit-order}\\
+    &x_{uv} \in \{0, 1\}&\forall (u, v) \in A\nonumber\\
+    &y_{uv} \in \{0, 1\}&\forall (u, v) \in A\nonumber\\
+    &r_{v} \in \{0, 1\}&\forall v \in V\nonumber\\
+    &t_{v} \in \mathbb{R}_{\geq 0}&\forall v \in V\nonumber
+\end{align}
+
+Onde $A$ é o conjunto dos arcos do grafo orientado, $V$ é o conjunto de vértices no grafo, e as constantes $c_{uv} = c_{vu}$ na função de custo correspondem ao custo $c_e$ da aresta $e$ que conecta $u$ e $v$ no grafo original.
+
+\subsection{Variáveis}
+
+As variáveis são:
+\begin{itemize}
+    \item $x_{uv}$, indica se o arco $(u, v)$ está sendo usado no ciclo;
+    \item $y_{uv}$, indica se o arco $(u, v)$ está sendo usado em alguma estrela;
+    \item $r_v$, indica que o vértice $v$ está no ciclo;
+    \item $t_v$, indica a ordem do vértice $v$ no ciclo.
+\end{itemize}
+
+\subsection{Restrições}
+
+Podemos dividir as restrições da formulação em três grupos: 
+\begin{itemize}
+    \item Restrições de partição, que garantem que a partição dos vértices respeita as condições do problema;
+    \item Restrições de topologia, que garantem que a topologia da solução atende os critérios gerais do problema (exceto pela existência de subciclos);
+    \item Uma restrição de eliminação de subciclo, que completa as restrições de topologia, garantindo que a solução contém apenas um ciclo. 
+\end{itemize}
+
+\subsubsection{Restrições de partição}
+
+A restrição \ref{min-partitions} garante que a partição dos vértices tem pelo menos três partes (i.e. o ciclo tem tamanho maior ou igual a 3).
+
+A restrição \ref{partition-packing} garante que a soma dos pesos dos vértices de uma estrela não ultrapasse o valor limite $B$.
+
+\subsubsection{Restrições de topologia da solução}
+
+A restrição \ref{star-in-degree} tem função dupla, garantindo que exatamente um arco de estrela entre em cada vértice fora do ciclo, e também que nenhum arco de estrela entra em um vértice do ciclo.
+
+A restrição \ref{partition-packing} também garante que nenhuma aresta de estrela sai de um vértice fora do ciclo.
+
+As restrições \ref{circuit-out-degree}  e \ref{circuit-in-degree} garantem que todo vértice no ciclo tem grau de entrada e saída (ignorando as arestas de estrela) iguais a 1, e analogamente que todo vértice fora do ciclo tem grau zero (i.e. um arco do ciclo nunca incide sobre um vértice fora do ciclo).
+
+\subsubsection{Restrição de eliminação de subciclos}
+
+A restrição \ref{circuit-order} é análoga à de eliminação de subciclos na formulação Miller-Tucker-Zemlin do problema do caixeiro viajante (TSP), e impõe uma ordem aos vértices de forma que qualquer ciclo no grafo necessariamente inclua um vértice particular (que é fixo para um dado grafo). Como os vértices no ciclo têm grau de entrada e saída iguais a 1 (pelas restrições de topologia), isso é suficiente para garantir que a solução contém exatamente um ciclo.
+
+Na formulação do TSP, como o ciclo é hamiltoniano, basta escolher um vértice qualquer. No nosso caso, como nem todo vértice está no ciclo, precisamos de alguma forma de escolher um vértice que esteja no ciclo.
+
+Para isso, escolhemos um vértice $v_0$ qualquer (que não necessariamente está ciclo), e como vértice que deve estar no ciclo usamos $v_0$ ou o vértice do ciclo que atende $v_0$ (que é único). Podemos identificar o vértice que atende $v_0$ através dos arcos de estrela.
+
+Dessa forma, a restrição \ref{circuit-order} força que todo vértice no ciclo tenha ordem maior que seu predecessor (i.e. a cauda do arco que entra no vértice), como única exceção o vértice $v_0$ ou o vértice que atende $v_0$ (i.e. o vértice $v$ tal que $y_{vv_0} = 1$). Isso é suficiente para garantir que existe um único ciclo na solução.
+
+Como uma melhoria, podemos ainda fortalecer a restrição \ref{circuit-order} da seguinte forma \cite{DESROCHERS199127}:
+$$t_u - t_v + |V|(x_{uv} - y_{vv_0}) + (|V| - 2)x_{vu} \leq |V| - 1 \qquad \forall (u, v) \in A, v \neq v_0$$
+
+\section{Experimentos computacionais}
+
+Executei o programa em uma máquina com o sistema operacional Manjaro Linux, com 32 GB de RAM e um processador Intel i9-12900K (especificado na tabela \ref{tab:cpu-spec}), utilizando a build v10.0.3rc0 (linux64) do Gurobi, com a licença acadêmica.
+
+\begin{table}[ht]
+    \centering
+    \begin{tabular}{|l|l|}
+        \hline
+        \textbf{Modelo} & i9-12900K \\\hline
+        \textbf{Fabricante} & Intel\textsuperscript{\tiny\textregistered} \\\hline
+        \textbf{Microarquitetura} & Alder Lake\\\hline
+        \textbf{Núcleos} & 8 performance / 8 eficiência\\\hline
+        \textbf{Threads} & 24\\\hline
+        \textbf{Frequência} & 3.20GHz (performance) / 2.40 GHz (eficiência)\\\hline
+        \textbf{Cache} & 30 MB Intel\textsuperscript{\tiny\textregistered} Smart Cache\\\hline
+        \textbf{Cache L2} & 14 MB\\\hline
+    \end{tabular}
+    \caption{Especificação da CPU}
+    \label{tab:cpu-spec}
+\end{table}
+
+Utilizei as instâncias disponibilizadas junto ao código de exemplo, exceto pelas duas últimas instâncias de 100 nós, visto que as três instâncias de 100 nós que foram executadas atingiram o tempo limite e foram suficientes para analisar o desempenho do modelo.
+
+A tabela \ref{tab:computational-results} mostra os resultados obtidos para cada instância, identificada pelo número de nós (coluna N) e o número da instância dentro do grupo de nós (coluna Inst.). A linha N = 10, Inst. = 1 corresponde à instância {\tt mo420\_network\_design\_1\_10\_100\_20\_80\_1}, a linha N = 20, Inst. = 3 corresponde à instância {\tt mo420\_network\_design\_3\_20\_100\_20\_80\_2}, etc.
+
+Os tempos foram medidos utilizando a classe {\tt std::chrono::steady\_clock} da biblioteca {\tt <chrono>} da biblioteca padrão do C++ 11, com precisão de milissegundos.
+
+\begin{table}[ht]
+    \centering
+    \begin{tabular}{c|c|c|c|c|c|c|c}
+        \hline
+        \multirow{2}{0.6cm}{N}&\multirow{2}{1cm}{Inst.} & \multicolumn{3}{c|}{Branch-And-Bound} & \multicolumn{2}{c|}{Heurística} & \multirow{2}{1.15cm}{Tempo}\\
+        \cline{3-7}
+        &&Valor & Lim. & Nós & Valor & Tempo \\
+        \hline\hline
+
+        \multirow{5}{0.6cm}{10}
+        &{\tt 1} & 23432 & -- & 132 & 30613 & 0ms & 159ms\\
+        &{\tt 2} & 29460 & -- & 1 & 40066 & 0ms & 9ms \\
+        &{\tt 3} & 29315 & -- & 1 & 44758 & 0ms & 23ms \\
+        &{\tt 4} & 32767 & -- & 1 & 36398 & 0ms & 41ms \\
+        &{\tt 5} & 30888 & -- & 1 & 34736 & 0ms & 17ms \\
+
+        \hline\multirow{5}{0.6cm}{20}
+        &{\tt 1} & 68938 & -- & 571 & 109846 & 0ms & 431ms\\
+        &{\tt 2} & 83628 & -- & 6005 & 120438 & 0ms & 949ms \\
+        &{\tt 3} & 74927 & -- & 1537 & 114112 & 0ms & 339ms \\
+        &{\tt 4} & 73473 & -- & 8362 & 98290 & 0ms & 633ms \\
+        &{\tt 5} & 73429 & -- & 1112 & 119636 & 0ms & 262ms\\
+
+        \hline\multirow{5}{0.6cm}{50}
+        &{\tt 1} & 244058 & -- & 408816 & 336160 & 4ms & 163,371s\\
+        &{\tt 2} & 257081 & -- & 43240 & 367513 & 1ms & 24,106s \\
+        &{\tt 3} & 258745 & 249187 & 8570011 & 390803 & 1ms & {\bf 3600s} \\
+        &{\tt 4} & 250595 & -- & 155381 & 396860 & 1ms & 66,510s \\
+        &{\tt 5} & 238698 & -- & 14754 & 389217 & 1ms & 4,609s\\
+
+        \hline\multirow{3}{0.6cm}{100}
+        &{\tt 1} & 570825 & 529124 & 587894 & 1081590 & 20ms & {\bf 3600s}\\
+        &{\tt 2} & 561811 & 537250 & 1238796 & 1167600 & 9ms & {\bf 3600s} \\
+        &{\tt 3} & 514868 & 432015 & 755331 & 822091 & 12ms & {\bf 3600s} \\\hline
+    \end{tabular}
+    \caption{Resultados computacionais}
+    \label{tab:computational-results}
+\end{table}
+
+De forma geral, o programa é consistentemente rápido (tempo $<$ 1s) para resolver instâncias de até 20 nós (grupo N = 20). O resultado é variado para 50 nós, com casos extremos na instância 5, que demorou cerca de 5 segundos, e na instância 3, que atingiu o tempo limite; em geral, as instâncias de 50 nós demoram menos que três minutos para convergir.
+
+A instância de 50 nós que atingiu o tempo limite terminou o processo com um gap de 3,69\%. Analisando os logs gerados, o modelo aparenta ter tido dificuldade para aumentar o valor do limite inferior.
+
+Todas as instâncias de 100 nós atingiram o tempo limite, com gaps de 7.3055\%, 4.3719\% e 16.0922\% (respectivamente, para as instâncias 1, 2 e 3).
+
+\newpage
+\bibliographystyle{abntex2-alf}
+\bibliography{refs}
+
+\end{document}

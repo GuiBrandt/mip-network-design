@@ -12,8 +12,7 @@ using mip_vars_t = mip_vars_base;
 /**
  * Classe para a formulação polinomial do problema.
  */
-class formulation_t : public formulation_base<mip_vars_t>,
-                      public GRBCallback {
+class formulation_t : public formulation_base<mip_vars_t>, public GRBCallback {
   private:
     /**
      * Adiciona restrições de corte violadas de forma preguiçosa.

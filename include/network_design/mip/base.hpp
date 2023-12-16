@@ -106,15 +106,6 @@ template <typename Vars> class formulation_base {
                             constr_name);
         }
 
-        // No máximo um dos arcos correspondentes a uma aresta pode ser
-        // escolhido para o ciclo.
-        for (Graph::EdgeIt e(G); e != lemon::INVALID; ++e) {
-            auto u = G.u(e), v = G.v(e);
-            model.addConstr(vars.circuit_arc[G.arc(u, v)] +
-                                vars.circuit_arc[G.arc(v, u)] <=
-                            1);
-        }
-
         // Todo vértice no circuito deve ter grau de entrada e saída igual a 1.
         for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
             GRBLinExpr in_degree_expr;

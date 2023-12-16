@@ -213,20 +213,23 @@ void formulation_t::find_violated_blossom() {
     }
 
     for (Graph::NodeIt u(G); u != lemon::INVALID; ++u) {
-        GRBLinExpr expr;
         if (cut_size[u] % 2 == 0 || gomory_hu.predValue(u) > 1.0 - 1e-5) {
             continue;
         }
 
+        GRBLinExpr out_expr, in_expr;
         for (decltype(gomory_hu)::MinCutEdgeIt e(gomory_hu, u,
                                                  gomory_hu.predNode(u));
              e != lemon::INVALID; ++e) {
             Graph::Arc a = G.arc(G.u(e), G.v(e)), b = G.oppositeArc(a);
-            expr += vars.circuit_arc[a] + vars.circuit_arc[b] +
+            out_expr += vars.circuit_arc[a] + vars.circuit_arc[b] +
+                    2 * (vars.star_arc[a] + vars.star_arc[b]);
+            in_expr += vars.circuit_arc[G.oppositeArc(a)] + vars.circuit_arc[b] +
                     2 * (vars.star_arc[a] + vars.star_arc[b]);
         }
 
-        addCut(expr >= 1.0);
+        addLazy(in_expr >= 1);
+        addLazy(out_expr >= 1);
     }
 }
 
@@ -239,7 +242,6 @@ void formulation_t::callback() {
 
         case GRB_CB_MIPNODE:
             if (getIntInfo(GRB_CB_MIPNODE_STATUS) == GRB_OPTIMAL) {
-                // find_violated_blossom();
                 find_violated_fractional_cuts();
             }
             break;
