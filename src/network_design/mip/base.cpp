@@ -22,10 +22,7 @@ mip_vars_base::mip_vars_base(GRBModel& model, const instance_t& data)
         std::snprintf(var_name, sizeof(var_name), "circuit_arc[%d,%d]", G.id(u),
                       G.id(v));
         double cost = data.circuit_cost_factor * data.edge_cost[G.edge(u, v)];
-
-        // Desabilita arestas sem peso definido
-        bool usable = cost > 0;
-        circuit_arc[a] = model.addVar(0.0, usable, cost, GRB_BINARY, var_name);
+        circuit_arc[a] = model.addVar(0.0, 1.0, cost, GRB_BINARY, var_name);
     }
 
     // Arestas nas estrelas
@@ -33,10 +30,7 @@ mip_vars_base::mip_vars_base(GRBModel& model, const instance_t& data)
         std::snprintf(var_name, sizeof(var_name), "star_arc[%d,%d]",
                       G.id(G.source(a)), G.id(G.target(a)));
         double cost = data.edge_cost[a];
-
-        // Desabilita arestas sem peso definido
-        bool usable = cost < 1e99;
-        star_arc[a] = model.addVar(0.0, usable, cost, GRB_BINARY, var_name);
+        star_arc[a] = model.addVar(0.0, 1.0, cost, GRB_BINARY, var_name);
     }
 }
 

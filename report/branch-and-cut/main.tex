@@ -38,7 +38,7 @@ Considerando a versão direcionada do grafo (adicionando um arco em cada sentido
     &\sum_{v \in \delta^-(u)} x_{vu} = r_u
         &\forall u \in V\label{circuit-in-degree}\\
     &\sum_{(u, v) \in \delta^+(S)} x_{uv} + y_{uv} + y_{vu} \geq 1
-        &\forall S \subsetneq V\label{connectivity}\\
+        &\forall S \subsetneq V, S \neq \emptyset\label{connectivity}\\
     &x_{uv} \in \{0, 1\}&\forall (u, v) \in A\nonumber\\
     &y_{uv} \in \{0, 1\}&\forall (u, v) \in A\nonumber\\
     &r_{v} \in \{0, 1\}&\forall v \in V\nonumber
