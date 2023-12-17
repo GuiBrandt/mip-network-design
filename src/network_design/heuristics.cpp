@@ -2,6 +2,8 @@
 
 namespace network_design {
 
+// Encontra uma estrela de custo baixo com centro no vértice `u`, utilizando o
+// conjunto de nós disponíveis dado.
 std::vector<Graph::Node> pack_star(Graph::Node u,
                                    const std::set<Graph::Node>& node_pool,
                                    const instance_t& data) {
@@ -40,6 +42,7 @@ std::vector<Graph::Node> pack_star(Graph::Node u,
 solution_t greedy_heuristic(const instance_t& data) {
     const auto& G = data.graph;
 
+    // Armazenamos um conjunto dos nós ainda não utilizados na solução.
     std::set<Graph::Node> node_pool;
     for (Graph::NodeIt v(G); v != lemon::INVALID; ++v) {
         node_pool.insert(v);
@@ -50,6 +53,9 @@ solution_t greedy_heuristic(const instance_t& data) {
     int part = -1;
     while (!node_pool.empty()) {
         double best_cost = std::numeric_limits<double>::max();
+
+        // A cada iteração, geramos estrelas de custo baixo para cada nó ainda
+        // disponível, e adicionamos à solução aquela que tem o menor custo.
         std::vector<Graph::Node> best_star;
         Graph::Node best_center;
 

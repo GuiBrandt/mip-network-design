@@ -8,7 +8,7 @@
 \usepackage{hyperref}
 \usepackage{multirow}
 
-% \usepackage[ruled,portuguese]{algorithm2e}
+\usepackage[ruled,portuguese]{algorithm2e}
 
 \title{PLI - Relatório 1: Formulação compacta}
 \author{Guilherme Guidotti Brandt (235970)}
@@ -87,6 +87,41 @@ Dessa forma, a restrição \ref{circuit-order} força que todo vértice no ciclo
 Como uma melhoria, podemos ainda fortalecer a restrição \ref{circuit-order} da seguinte forma \cite{DESROCHERS199127}:
 $$t_u - t_v + |V|(x_{uv} - y_{vv_0}) + (|V| - 2)x_{vu} \leq |V| - 1 \qquad \forall (u, v) \in A, v \neq v_0$$
 
+\section{Heurística}
+
+Para definir um cut-off inicial razoável, implementei uma heurística gulosa para o problema. A heurística consiste essencialmente em tentar encontrar estrelas no grafo que minimizem o custo da solução de forma gulosa (ou seja, a cada passo adicionando a melhor estrela encontrada).
+
+Para encontrar uma estrela com custo baixo, a heurística escolhe, dado um centro, as arestas com a menor razão custo/peso do vértice. Uma melhoria possível (não cheguei a implementar) seria resolver um problema da mochila para encontrar o melhor empacotamento de vértices na estrela para cada centro.
+
+A cada passo, a heurística adiciona a estrela à solução, adicionando também uma aresta entre o centro da última estrela adicionada e o centro da atual.
+
+O algoritmo \ref{heuristica} descreve o procedimento da heurística.
+
+\begin{algorithm}[H]
+    \SetAlgoLined
+    \caption{Heurística gulosa para o problema}
+    \label{heuristica}
+    \KwData{$G$, um grafo; $c : E(G) \to \mathbb{Z}$, função custo das arestas de $G$; $d : V(G) \to \mathbb{Z}$, função de peso dos vértices de $G$}
+    \KwResult{O conjunto de arestas da solução}
+    $S \gets V(G)$\;
+    $R \gets \emptyset$\;
+    $c_0 \gets \emptyset$\;
+    $c \gets \emptyset$\;
+    \While{$S \neq \emptyset$}{
+        $H \gets $A estrela em $G[S]$ com menor custo (considerando o custo da aresta de ciclo a ser adicionada), com centro $v$\;
+        $S \gets S - V(H)$\;
+        $R \gets R \cup E(H)$\;
+        \eIf{$c \neq \emptyset$}{
+            $R \gets R \cup \{(c, v)\}$\;
+        }{
+            $c_0 \gets v$\;
+        }
+        $c \gets v$\;
+    }
+    \Return{$R$}
+\end{algorithm}
+
+
 \section{Experimentos computacionais}
 
 Executei o programa em uma máquina com o sistema operacional Manjaro Linux, com 32 GB de RAM e um processador Intel i9-12900K (especificado na tabela \ref{tab:cpu-spec}), utilizando a build v10.0.3rc0 (linux64) do Gurobi, com a licença acadêmica.
@@ -146,7 +181,7 @@ Os tempos foram medidos utilizando a classe {\tt std::chrono::steady\_clock} da 
 
         \hline\multirow{3}{0.6cm}{100}
         &{\tt 1} & 570825 & 529124 & 587894 & 1081590 & 20ms & {\bf 3600s}\\
-        &{\tt 2} & 561811 & 537250 & 1238796 & 1167600 & 9ms & {\bf 3600s} \\
+        &{\tt 2} & 561811 & 537250 & 1238796 & 1167600 & 9ms & {\bf 3600s}\\
         &{\tt 3} & 514868 & 432015 & 755331 & 822091 & 12ms & {\bf 3600s} \\\hline
     \end{tabular}
     \caption{Resultados computacionais}

@@ -61,7 +61,7 @@ int main(int argc, char* argv[]) {
     formulation_t formulation(*instance, env);
 
     auto solution = formulation.solve();
-    // network_design::view(solution, instance_name);
+    network_design::view(solution, instance_name);
 
     std::cout << "Total time: "
               << std::chrono::duration_cast<std::chrono::milliseconds>(

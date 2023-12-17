@@ -16,7 +16,7 @@ find_library(GUROBI_C_LIBRARY
     PATH_SUFFIXES lib
     DOC "GUROBI C library")
 
-set(GUROBI_CXX_DEBUG_LIBRARY ${GUROBI_CXX_LIBRARY})
+set(GUROBI_LIBRARIES ${GUROBI_CXX_LIBRARY} ${GUROBI_C_LIBRARY})
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(GUROBI DEFAULT_MSG GUROBI_CXX_LIBRARY)
+find_package_handle_standard_args(GUROBI DEFAULT_MSG GUROBI_LIBRARIES)

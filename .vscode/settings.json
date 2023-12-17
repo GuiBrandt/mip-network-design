@@ -1,8 +1,5 @@
 {
     "cmake.generator": "Unix Makefiles",
-    "cmake.environment": {
-        "LEMON_HOME": "${workspaceFolder}/lemon/lemon-1.3.1"
-    },
     "cmake.configureArgs": [
         "-DPDF_VIEWER=okular"
     ]
